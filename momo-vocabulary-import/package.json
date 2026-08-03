@@ -5,7 +5,7 @@
   "scripts": {
     "build": "node scripts/build-release.js",
     "dev": "node scripts/dev-web.js",
-    "test": "node --test test/lemma.test.mjs test/notepad.test.mjs test/selection.test.mjs test/native-api-contract.test.mjs",
+    "test": "node --test test/lemma.test.mjs test/notepad.test.mjs test/selection.test.mjs test/native-api-contract.test.mjs test/ui-contract.test.mjs",
     "version": "node scripts/bump-version.js",
     "version:patch": "node scripts/bump-version.js patch",
     "version:minor": "node scripts/bump-version.js minor",
