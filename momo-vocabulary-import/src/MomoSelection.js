@@ -36,6 +36,30 @@ var __MN_MOMO_SELECTION_GLOBAL__ = (function () {
     return items;
   }
 
+  function titleFromObject(object) {
+    if (!object) return undefined;
+    return nativeMember(object, "noteTitle") || nativeMember(object, "title");
+  }
+
+  function titleFromSelectedView(selectedView) {
+    const candidates = [
+      nativeMember(selectedView, "note"),
+      nativeMember(selectedView, "node"),
+      nativeMember(selectedView, "mindMapNode"),
+      nativeMember(selectedView, "mindmapNode"),
+      nativeMember(selectedView, "view"),
+    ];
+
+    for (const candidate of candidates) {
+      const directTitle = titleFromObject(candidate);
+      if (directTitle !== undefined && directTitle !== null) return directTitle;
+      const nestedNote = nativeMember(candidate, "note");
+      const nestedTitle = titleFromObject(nestedNote);
+      if (nestedTitle !== undefined && nestedTitle !== null) return nestedTitle;
+    }
+    return titleFromObject(selectedView);
+  }
+
   function selectedTitles(window) {
     const application = Application.sharedInstance();
     const focusWindow = nativeMember(application, "focusWindow");
@@ -59,10 +83,7 @@ var __MN_MOMO_SELECTION_GLOBAL__ = (function () {
     };
 
     for (const selectedView of selectedViews) {
-      const note = nativeMember(selectedView, "note");
-      const rawTitle = nativeMember(note, "noteTitle")
-        || nativeMember(selectedView, "noteTitle")
-        || nativeMember(selectedView, "title");
+      const rawTitle = titleFromSelectedView(selectedView);
       if (rawTitle === null || typeof rawTitle === "undefined") {
         if (titleSamples.length < 3) titleSamples.push("<未读取到标题>");
         continue;

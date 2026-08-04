@@ -25,6 +25,12 @@ test("MomoSelection reads dictionary-backed selected views", () => {
   assert.match(source, /object\.valueForKey\(key\)/);
 });
 
+test("MomoSelection searches nested selected-view note objects", () => {
+  assert.match(source, /"mindMapNode"/);
+  assert.match(source, /"mindmapNode"/);
+  assert.match(source, /nativeMember\(candidate, "note"\)/);
+});
+
 test("MomoSelection exposes selection diagnostics", () => {
   assert.match(source, /selectionDebug/);
   assert.match(source, /selectedViewCount: selectedViews\.length/);
