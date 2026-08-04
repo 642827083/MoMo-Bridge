@@ -120,7 +120,7 @@ function App() {
             type="password"
             value={token}
             autoComplete="off"
-            placeholder="Bearer Token"
+            placeholder="粘贴 Token（可带 Bearer 前缀）"
             onChange={(event) => setToken(event.target.value)}
           />
 

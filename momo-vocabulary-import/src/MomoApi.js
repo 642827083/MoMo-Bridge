@@ -68,16 +68,21 @@ var __MN_MOMO_API_GLOBAL__ = (function () {
     return nestedMessage ? String(nestedMessage) : "请求被墨墨开放 API 拒绝";
   }
 
+  function normalizedToken(token) {
+    return token.trim().replace(/^Bearer\s+/i, "");
+  }
+
   function requestJSON(token, path, method, body) {
-    if (typeof token !== "string" || !token.trim()) {
+    if (typeof token !== "string" || !normalizedToken(token)) {
       return Promise.reject(new Error("请先填写墨墨开放 API Token"));
     }
 
     return new Promise(function (resolve, reject) {
+      const apiToken = normalizedToken(token);
       const request = NSMutableURLRequest.requestWithURL(NSURL.URLWithString(`${API_ROOT}${path}`));
       request.setHTTPMethod(method);
       request.setValueForHTTPHeaderField("application/json", "Accept");
-      request.setValueForHTTPHeaderField(`Bearer ${token.trim()}`, "Authorization");
+      request.setValueForHTTPHeaderField(`Bearer ${apiToken}`, "Authorization");
 
       if (body !== undefined) {
         request.setValueForHTTPHeaderField("application/json", "Content-Type");

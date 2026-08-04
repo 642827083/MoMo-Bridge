@@ -24,3 +24,8 @@ test("MomoApi preserves the API's nested authorization error message", () => {
   assert.match(source, /valueForKey\(firstError, "msg"\)/);
   assert.match(source, /apiErrorMessage\(payload\)/);
 });
+
+test("MomoApi accepts a token pasted with an optional Bearer prefix", () => {
+  assert.match(source, /replace\(\/\^Bearer\\s\+\/i, ""\)/);
+  assert.match(source, /`Bearer \$\{apiToken\}`/);
+});
