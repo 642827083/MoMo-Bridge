@@ -112,14 +112,6 @@ function App() {
       <main className="import-layout">
         <section className="settings-column" aria-label="导入设置">
           <label className="field-label" htmlFor="momo-token">墨墨 Token</label>
-          <a
-            className="token-help"
-            href="https://accounts.maimemo.com"
-            target="_blank"
-            rel="noreferrer"
-          >
-            如何获取墨墨 Token
-          </a>
           <input
             id="momo-token"
             type="password"

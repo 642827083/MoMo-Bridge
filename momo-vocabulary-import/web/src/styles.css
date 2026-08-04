@@ -83,15 +83,6 @@ body {
   font-weight: 600;
 }
 
-.token-help {
-  width: fit-content;
-  margin-top: -6px;
-  color: var(--brand);
-  font-size: 12px;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-
 input,
 select {
   width: 100%;
