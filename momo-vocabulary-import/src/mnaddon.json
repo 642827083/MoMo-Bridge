@@ -2,7 +2,7 @@
   "addonid": "cn.marginnote.momo-vocabulary-import",
   "author": "mnandmomo",
   "title": "墨墨单词书导入",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "marginnote_version_min": "4.2.3",
   "cert_key": ""
 }
