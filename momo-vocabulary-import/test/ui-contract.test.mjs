@@ -6,7 +6,7 @@ const source = await readFile(new URL("../web/src/App.jsx", import.meta.url), "u
 
 test("Token help link appears above the Token input", () => {
   const labelIndex = source.indexOf('htmlFor="momo-token"');
-  const linkIndex = source.indexOf('href="https://accounts.maimemo.com/interaction/gPKHilg7fXNmsi2OrZK8IbH4AV6l7bZKRZTU4Aowmii"');
+  const linkIndex = source.indexOf('href="https://accounts.maimemo.com"');
   const inputIndex = source.indexOf('id="momo-token"');
 
   assert.ok(labelIndex >= 0, "Token label should exist");

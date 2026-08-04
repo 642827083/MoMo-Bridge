@@ -109,7 +109,7 @@ function App() {
           <label className="field-label" htmlFor="momo-token">墨墨 Token</label>
           <a
             className="token-help"
-            href="https://accounts.maimemo.com/interaction/gPKHilg7fXNmsi2OrZK8IbH4AV6l7bZKRZTU4Aowmii"
+            href="https://accounts.maimemo.com"
             target="_blank"
             rel="noreferrer"
           >
