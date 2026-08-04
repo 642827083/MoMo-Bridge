@@ -58,3 +58,13 @@ test("MomoApi accepts direct and data-wrapped notepad detail responses", () => {
   assert.match(source, /if \(looksLikeNotepad\(data\)\) return data/);
   assert.match(source, /if \(looksLikeNotepad\(payload\)\) return payload/);
 });
+
+test("MomoApi verifies imports with a fresh notepad read", () => {
+  assert.match(source, /POST responses are often acknowledgements/);
+  assert.match(source, /requestJSON\(token, path, "GET"\)/);
+});
+
+test("MomoApi can classify words from raw notepad content", () => {
+  assert.match(source, /Some API responses omit the parsed list/);
+  assert.match(source, /content\.split\(\/\\r\?\\n\//);
+});

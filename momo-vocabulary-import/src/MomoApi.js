@@ -44,6 +44,15 @@ var __MN_MOMO_API_GLOBAL__ = (function () {
         result[word.trim().toLowerCase()] = true;
       }
     }
+
+    // Some API responses omit the parsed list and only return the raw wordbook content.
+    const content = valueForKey(notepad, "content");
+    if (typeof content === "string") {
+      for (const line of content.split(/\r?\n/)) {
+        const word = line.trim().replace(/^[-*]\s+/, "").toLowerCase();
+        if (/^[a-z][a-z'-]*$/.test(word)) result[word] = true;
+      }
+    }
     return result;
   }
 
@@ -239,8 +248,13 @@ var __MN_MOMO_API_GLOBAL__ = (function () {
         return classify(before, before, words);
       }
 
-      return requestJSON(token, path, "POST", update.body).then(function (response) {
-        return classify(before, extractNotepad(response), words);
+      return requestJSON(token, path, "POST", update.body).then(function () {
+        // POST responses are often acknowledgements without the updated word list.
+        return requestJSON(token, path, "GET").then(function (payload) {
+          const after = extractNotepad(payload);
+          if (!after) throw new Error("墨墨已接受请求，但无法读取更新后的云词本");
+          return classify(before, after, words);
+        });
       });
     });
   }
