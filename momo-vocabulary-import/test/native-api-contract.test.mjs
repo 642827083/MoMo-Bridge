@@ -50,3 +50,11 @@ test("MomoApi supports direct and data-wrapped notepad lists", () => {
   assert.match(source, /valueForKey\(payload, "notepads"\)/);
   assert.match(source, /valueForKey\(data, "notepads"\)/);
 });
+
+test("MomoApi accepts direct and data-wrapped notepad detail responses", () => {
+  assert.match(source, /function extractNotepad\(payload\)/);
+  assert.match(source, /valueForKey\(payload, "notepad"\)/);
+  assert.match(source, /valueForKey\(data, "notepad"\)/);
+  assert.match(source, /if \(looksLikeNotepad\(data\)\) return data/);
+  assert.match(source, /if \(looksLikeNotepad\(payload\)\) return payload/);
+});

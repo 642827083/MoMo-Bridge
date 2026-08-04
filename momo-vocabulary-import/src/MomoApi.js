@@ -77,6 +77,26 @@ var __MN_MOMO_API_GLOBAL__ = (function () {
     return nestedMessage ? String(nestedMessage) : "请求被墨墨开放 API 拒绝";
   }
 
+  function looksLikeNotepad(value) {
+    if (!value) return false;
+    return valueForKey(value, "id") !== undefined
+      || valueForKey(value, "title") !== undefined
+      || valueForKey(value, "content") !== undefined
+      || valueForKey(value, "list") !== undefined;
+  }
+
+  function extractNotepad(payload) {
+    const direct = valueForKey(payload, "notepad");
+    if (looksLikeNotepad(direct)) return direct;
+
+    const data = valueForKey(payload, "data");
+    const nested = valueForKey(data, "notepad");
+    if (looksLikeNotepad(nested)) return nested;
+    if (looksLikeNotepad(data)) return data;
+    if (looksLikeNotepad(payload)) return payload;
+    return undefined;
+  }
+
   function normalizedToken(token) {
     return token.trim().replace(/^Bearer\s+/i, "");
   }
@@ -211,7 +231,7 @@ var __MN_MOMO_API_GLOBAL__ = (function () {
   function importWords(token, bookId, words) {
     const path = `/memo/notepads/${encodeURIComponent(bookId)}`;
     return requestJSON(token, path, "GET").then(function (payload) {
-      const before = valueForKey(payload, "notepad");
+      const before = extractNotepad(payload);
       if (!before) throw new Error("未找到目标云词本，请重新加载列表后选择");
 
       const update = buildUpdate(before, words);
@@ -220,7 +240,7 @@ var __MN_MOMO_API_GLOBAL__ = (function () {
       }
 
       return requestJSON(token, path, "POST", update.body).then(function (response) {
-        return classify(before, valueForKey(response, "notepad"), words);
+        return classify(before, extractNotepad(response), words);
       });
     });
   }
