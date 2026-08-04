@@ -24,3 +24,8 @@ test("MomoSelection exposes selection diagnostics", () => {
   assert.match(source, /selectionDebug/);
   assert.match(source, /selectedViewCount: selectedViews\.length/);
 });
+
+test("MomoSelection reports title samples for failed extraction", () => {
+  assert.match(source, /titleSamples/);
+  assert.match(source, /未读取到标题/);
+});

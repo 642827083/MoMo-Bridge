@@ -21,3 +21,8 @@ test("Selection errors distinguish an empty MarginNote selection", () => {
   assert.match(source, /selectedViewCount/);
   assert.match(source, /MarginNote 未返回已选卡片/);
 });
+
+test("Selection errors include title samples", () => {
+  assert.match(source, /标题样例/);
+  assert.match(source, /titleSamples/);
+});

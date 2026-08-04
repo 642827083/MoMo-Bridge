@@ -39,6 +39,7 @@ var __MN_MOMO_SELECTION_GLOBAL__ = (function () {
     const selectedList = nativeMember(mindmapView, "selViewLst");
     const selectedViews = nativeArrayItems(selectedList);
     const titles = [];
+    const titleSamples = [];
 
     lastDebug = {
       windowProvided: !!window,
@@ -48,6 +49,7 @@ var __MN_MOMO_SELECTION_GLOBAL__ = (function () {
       mindmapViewAvailable: !!mindmapView,
       selectionListAvailable: !!selectedList,
       selectedViewCount: selectedViews.length,
+      titleSamples,
     };
 
     for (const selectedView of selectedViews) {
@@ -55,8 +57,12 @@ var __MN_MOMO_SELECTION_GLOBAL__ = (function () {
       const rawTitle = nativeMember(note, "noteTitle")
         || nativeMember(selectedView, "noteTitle")
         || nativeMember(selectedView, "title");
-      if (rawTitle === null || typeof rawTitle === "undefined") continue;
+      if (rawTitle === null || typeof rawTitle === "undefined") {
+        if (titleSamples.length < 3) titleSamples.push("<未读取到标题>");
+        continue;
+      }
       const title = String(rawTitle).trim();
+      if (titleSamples.length < 3) titleSamples.push(title || "<空标题>");
       if (title) {
         titles.push(title);
       }

@@ -63,9 +63,11 @@ function App() {
       setPreview({ ...parsed, selectedCount: payload.titles?.length || 0 });
       if (parsed.lemmas.length === 0) {
         const selectedViewCount = payload.debug?.selectedViewCount;
+        const titleSamples = payload.debug?.titleSamples?.filter(Boolean).join(" | ");
+        const sampleMessage = titleSamples ? ` 标题样例：${titleSamples}` : "";
         setMessage(selectedViewCount === 0
           ? "MarginNote 未返回已选卡片，请保持卡片选中后再点击识别"
-          : "已读取选中卡片，但未识别到可导入的单词原型");
+          : `已读取选中卡片，但未识别到可导入的单词原型。${sampleMessage}`);
       }
     } catch (error) {
       setMessage(error.message || "读取已选卡片失败");
