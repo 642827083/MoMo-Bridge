@@ -4,6 +4,12 @@ var __MN_MOMO_SELECTION_GLOBAL__ = (function () {
   function nativeMember(object, key) {
     if (!object) return undefined;
     let value = object[key];
+    if (value === undefined && typeof object.objectForKey === "function") {
+      value = object.objectForKey(key);
+    }
+    if (value === undefined && typeof object.valueForKey === "function") {
+      value = object.valueForKey(key);
+    }
     if (typeof value === "function") {
       try {
         value = value.call(object);
