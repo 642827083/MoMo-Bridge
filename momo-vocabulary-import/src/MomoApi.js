@@ -142,7 +142,7 @@ var __MN_MOMO_API_GLOBAL__ = (function () {
   }
 
   function listNotepads(token) {
-    return requestJSON(token, "/memo/notepads?limit=100&offset=0", "GET").then(function (payload) {
+    return requestJSON(token, "/memo/notepads?limit=10&offset=0", "GET").then(function (payload) {
       const directList = valueForKey(payload, "notepads");
       const data = valueForKey(payload, "data");
       const nestedList = valueForKey(data, "notepads");

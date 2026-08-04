@@ -17,7 +17,7 @@ test("MomoApi uses the request, JSON, and HTTP-status methods exported by Margin
 
 test("MomoApi uses the current memo notepad endpoint", () => {
   assert.match(source, /\/memo\/notepads/);
-  assert.match(source, /requestJSON\(token, "\/memo\/notepads\?limit=100&offset=0", "GET"\)/);
+  assert.match(source, /requestJSON\(token, "\/memo\/notepads\?limit=10&offset=0", "GET"\)/);
 });
 
 test("MomoApi preserves the API's nested authorization error message", () => {
