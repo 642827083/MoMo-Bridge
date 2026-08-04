@@ -23,8 +23,11 @@ var __MN_MOMO_SELECTION_GLOBAL__ = (function () {
     const titles = [];
 
     for (const selectedView of nativeArrayItems(mindmapView && mindmapView.selViewLst)) {
-      const title = selectedView && selectedView.note ? selectedView.note.noteTitle : null;
-      if (typeof title === "string" && title.trim()) {
+      const note = selectedView && selectedView.note;
+      const rawTitle = note && note.noteTitle;
+      if (rawTitle === null || typeof rawTitle === "undefined") continue;
+      const title = String(rawTitle).trim();
+      if (title) {
         titles.push(title);
       }
     }
