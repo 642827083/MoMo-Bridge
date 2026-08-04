@@ -1,4 +1,4 @@
-const ENGLISH_WORD = /^[a-z]+(?:['-][a-z]+)*$/i;
+const ENGLISH_WORD = /^[^a-z]*([a-z]+(?:['-][a-z]+)*)[^a-z]*$/i;
 
 export function extractLemma(title) {
   if (typeof title !== "string") {
@@ -10,11 +10,12 @@ export function extractLemma(title) {
     .map((segment) => segment.trim())
     .find(Boolean);
 
-  if (!firstSegment || !ENGLISH_WORD.test(firstSegment)) {
+  if (!firstSegment || /^\d/.test(firstSegment)) {
     return null;
   }
 
-  return firstSegment.toLowerCase();
+  const match = firstSegment.match(ENGLISH_WORD);
+  return match ? match[1].toLowerCase() : null;
 }
 
 export function collectLemmas(titles) {

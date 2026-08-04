@@ -18,6 +18,10 @@ test("extractLemma skips titles whose first segment is not an English word", () 
   assert.equal(extractLemma("3rd-place; third-place"), null);
 });
 
+test("extractLemma accepts punctuation around a word", () => {
+  assert.equal(extractLemma("[order]; ordered; ordering"), "order");
+});
+
 test("collectLemmas preserves order and removes case-insensitive duplicates", () => {
   assert.deepEqual(
     collectLemmas([

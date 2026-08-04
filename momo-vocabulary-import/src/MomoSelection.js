@@ -52,7 +52,9 @@ var __MN_MOMO_SELECTION_GLOBAL__ = (function () {
 
     for (const selectedView of selectedViews) {
       const note = nativeMember(selectedView, "note");
-      const rawTitle = nativeMember(note, "noteTitle");
+      const rawTitle = nativeMember(note, "noteTitle")
+        || nativeMember(selectedView, "noteTitle")
+        || nativeMember(selectedView, "title");
       if (rawTitle === null || typeof rawTitle === "undefined") continue;
       const title = String(rawTitle).trim();
       if (title) {
