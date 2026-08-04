@@ -47,12 +47,25 @@ var __MN_MOMO_API_GLOBAL__ = (function () {
   function nativeErrorMessage(error) {
     if (!error) return "";
     try {
-      let message = error.localizedDescription;
+      let message = error.localizedDescription || error.message;
       if (typeof message === "function") message = message.call(error);
-      return message ? String(message) : "";
+      if (message) return String(message);
+
+      const domain = error.domain;
+      const code = error.code;
+      return domain || code !== undefined ? `${String(domain || "NSError")} (${String(code)})` : "";
     } catch (ignored) {
       return "";
     }
+  }
+
+  function apiErrorMessage(payload) {
+    const directMessage = valueForKey(payload, "message") || valueForKey(payload, "error");
+    if (directMessage) return String(directMessage);
+
+    const firstError = arrayItems(valueForKey(payload, "errors"))[0];
+    const nestedMessage = valueForKey(firstError, "msg") || valueForKey(firstError, "message");
+    return nestedMessage ? String(nestedMessage) : "请求被墨墨开放 API 拒绝";
   }
 
   function requestJSON(token, path, method, body) {
@@ -75,14 +88,6 @@ var __MN_MOMO_API_GLOBAL__ = (function () {
         request,
         NSOperationQueue.mainQueue(),
         function (response, data, error) {
-          if (error) {
-            const detail = nativeErrorMessage(error);
-            reject(new Error(detail
-              ? `无法连接墨墨开放 API：${detail}`
-              : "无法连接墨墨开放 API，请检查网络后重试"));
-            return;
-          }
-
           const statusCode = Number(response && response.statusCode());
           let payload = null;
           try {
@@ -92,9 +97,21 @@ var __MN_MOMO_API_GLOBAL__ = (function () {
             return;
           }
 
-          if (!Number.isFinite(statusCode) || statusCode < 200 || statusCode >= 300) {
-            const message = valueForKey(payload, "message") || valueForKey(payload, "error") || "请求被墨墨开放 API 拒绝";
-            reject(new Error(String(message)));
+          if (Number.isFinite(statusCode) && (statusCode < 200 || statusCode >= 300)) {
+            reject(new Error(apiErrorMessage(payload)));
+            return;
+          }
+
+          if (error) {
+            const detail = nativeErrorMessage(error);
+            reject(new Error(detail
+              ? `无法连接墨墨开放 API：${detail}`
+              : "无法连接墨墨开放 API，请检查网络后重试"));
+            return;
+          }
+
+          if (!Number.isFinite(statusCode)) {
+            reject(new Error("墨墨开放 API 未返回有效响应"));
             return;
           }
 

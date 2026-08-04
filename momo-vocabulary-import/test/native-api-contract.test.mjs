@@ -19,3 +19,8 @@ test("MomoApi uses the current memo notepad endpoint", () => {
   assert.match(source, /\/memo\/notepads/);
   assert.doesNotMatch(source, /"\/notepads\?limit=100/);
 });
+
+test("MomoApi preserves the API's nested authorization error message", () => {
+  assert.match(source, /valueForKey\(firstError, "msg"\)/);
+  assert.match(source, /apiErrorMessage\(payload\)/);
+});
