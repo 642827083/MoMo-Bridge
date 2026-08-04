@@ -57,7 +57,11 @@ var __MN_WEB_BRIDGE_COMMANDS_GLOBAL__ = (function () {
     if (!context.addon || !context.addon.window) {
       throw new Error("当前未连接到 MarginNote 学习窗口");
     }
-    return { titles: __MN_MOMO_SELECTION_GLOBAL__.selectedTitles(context.addon.window) };
+    const titles = __MN_MOMO_SELECTION_GLOBAL__.selectedTitles(context.addon.window);
+    return {
+      titles,
+      debug: __MN_MOMO_SELECTION_GLOBAL__.selectionDebug(),
+    };
   }
 
   function listMomoNotepads() {

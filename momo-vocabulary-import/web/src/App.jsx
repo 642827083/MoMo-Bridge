@@ -62,7 +62,10 @@ function App() {
       const parsed = collectLemmas(payload.titles || []);
       setPreview({ ...parsed, selectedCount: payload.titles?.length || 0 });
       if (parsed.lemmas.length === 0) {
-        setMessage("未从已选卡片中识别到可导入的单词原型");
+        const selectedViewCount = payload.debug?.selectedViewCount;
+        setMessage(selectedViewCount === 0
+          ? "MarginNote 未返回已选卡片，请保持卡片选中后再点击识别"
+          : "已读取选中卡片，但未识别到可导入的单词原型");
       }
     } catch (error) {
       setMessage(error.message || "读取已选卡片失败");

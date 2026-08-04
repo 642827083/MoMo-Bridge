@@ -19,3 +19,8 @@ test("MomoSelection supports bridged property methods", () => {
   assert.match(source, /value\.call\(object\)/);
   assert.match(source, /nativeMember\(mindmapView, "selViewLst"\)/);
 });
+
+test("MomoSelection exposes selection diagnostics", () => {
+  assert.match(source, /selectionDebug/);
+  assert.match(source, /selectedViewCount: selectedViews\.length/);
+});

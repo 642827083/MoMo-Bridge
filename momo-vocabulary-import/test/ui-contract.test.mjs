@@ -16,3 +16,8 @@ test("Token help link appears above the Token input", () => {
   assert.match(source, /target="_blank"/);
   assert.match(source, /rel="noreferrer"/);
 });
+
+test("Selection errors distinguish an empty MarginNote selection", () => {
+  assert.match(source, /selectedViewCount/);
+  assert.match(source, /MarginNote 未返回已选卡片/);
+});

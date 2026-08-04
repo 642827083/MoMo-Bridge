@@ -1,4 +1,6 @@
 var __MN_MOMO_SELECTION_GLOBAL__ = (function () {
+  let lastDebug = {};
+
   function nativeMember(object, key) {
     if (!object) return undefined;
     let value = object[key];
@@ -30,12 +32,25 @@ var __MN_MOMO_SELECTION_GLOBAL__ = (function () {
 
   function selectedTitles(window) {
     const application = Application.sharedInstance();
-    const studyController = application.studyController(window || application.focusWindow);
+    const focusWindow = nativeMember(application, "focusWindow");
+    const studyController = application.studyController(window || focusWindow);
     const notebookController = nativeMember(studyController, "notebookController");
     const mindmapView = nativeMember(notebookController, "mindmapView");
+    const selectedList = nativeMember(mindmapView, "selViewLst");
+    const selectedViews = nativeArrayItems(selectedList);
     const titles = [];
 
-    for (const selectedView of nativeArrayItems(nativeMember(mindmapView, "selViewLst"))) {
+    lastDebug = {
+      windowProvided: !!window,
+      focusWindowAvailable: !!focusWindow,
+      studyControllerAvailable: !!studyController,
+      notebookControllerAvailable: !!notebookController,
+      mindmapViewAvailable: !!mindmapView,
+      selectionListAvailable: !!selectedList,
+      selectedViewCount: selectedViews.length,
+    };
+
+    for (const selectedView of selectedViews) {
       const note = nativeMember(selectedView, "note");
       const rawTitle = nativeMember(note, "noteTitle");
       if (rawTitle === null || typeof rawTitle === "undefined") continue;
@@ -48,7 +63,12 @@ var __MN_MOMO_SELECTION_GLOBAL__ = (function () {
     return titles;
   }
 
+  function selectionDebug() {
+    return lastDebug;
+  }
+
   return {
     selectedTitles,
+    selectionDebug,
   };
 })();
