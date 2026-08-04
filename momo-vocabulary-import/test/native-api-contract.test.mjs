@@ -8,7 +8,7 @@ test("MomoApi uses the request, JSON, and HTTP-status methods exported by Margin
   assert.match(source, /request\.setHTTPMethod\(method\)/);
   assert.match(source, /request\.setHTTPBody\(NSJSONSerialization\.dataWithJSONObjectOptions\(body, 0\)\)/);
   assert.match(source, /NSJSONSerialization\.dataWithJSONObjectOptions\(body, 0\)/);
-  assert.match(source, /NSJSONSerialization\.JSONObjectWithDataOptions\(data, 0\)/);
+  assert.match(source, /NSJSONSerialization\.JSONObjectWithDataOptions\(data, 1\)/);
   assert.match(source, /response\.statusCode\(\)/);
   assert.doesNotMatch(source, /request\.HTTPMethod\s*=/);
   assert.doesNotMatch(source, /request\.HTTPBody\s*=/);
@@ -35,4 +35,9 @@ test("MomoApi follows MarginNote's complete request configuration", () => {
   assert.match(source, /request\.setTimeoutInterval\(10\)/);
   assert.match(source, /request\.setAllHTTPHeaderFields\(headers\)/);
   assert.match(source, /"User-Agent": "Mozilla\/5\.0/);
+});
+
+test("MomoApi does not mistake MarginNote's NSNull success placeholder for an error", () => {
+  assert.match(source, /value instanceof NSNull/);
+  assert.match(source, /if \(!isNativeNil\(error\)\)/);
 });

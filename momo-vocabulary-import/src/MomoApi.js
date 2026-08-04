@@ -59,6 +59,12 @@ var __MN_MOMO_API_GLOBAL__ = (function () {
     }
   }
 
+  function isNativeNil(value) {
+    return value === null
+      || typeof value === "undefined"
+      || (typeof NSNull !== "undefined" && value instanceof NSNull);
+  }
+
   function apiErrorMessage(payload) {
     const directMessage = valueForKey(payload, "message") || valueForKey(payload, "error");
     if (directMessage) return String(directMessage);
@@ -99,10 +105,18 @@ var __MN_MOMO_API_GLOBAL__ = (function () {
         request,
         NSOperationQueue.mainQueue(),
         function (response, data, error) {
+          if (!isNativeNil(error)) {
+            const detail = nativeErrorMessage(error);
+            reject(new Error(detail
+              ? `无法连接墨墨开放 API：${detail}`
+              : "无法连接墨墨开放 API，请检查网络后重试"));
+            return;
+          }
+
           const statusCode = Number(response && response.statusCode());
           let payload = null;
           try {
-            payload = data ? NSJSONSerialization.JSONObjectWithDataOptions(data, 0) : {};
+            payload = isNativeNil(data) ? {} : NSJSONSerialization.JSONObjectWithDataOptions(data, 1);
           } catch (parseError) {
             reject(new Error("墨墨开放 API 返回了无法识别的数据"));
             return;
@@ -110,14 +124,6 @@ var __MN_MOMO_API_GLOBAL__ = (function () {
 
           if (Number.isFinite(statusCode) && (statusCode < 200 || statusCode >= 300)) {
             reject(new Error(apiErrorMessage(payload)));
-            return;
-          }
-
-          if (error) {
-            const detail = nativeErrorMessage(error);
-            reject(new Error(detail
-              ? `无法连接墨墨开放 API：${detail}`
-              : "无法连接墨墨开放 API，请检查网络后重试"));
             return;
           }
 
