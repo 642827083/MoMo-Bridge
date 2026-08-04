@@ -127,7 +127,7 @@ var __MN_MOMO_API_GLOBAL__ = (function () {
   }
 
   function listNotepads(token) {
-    return requestJSON(token, "/memo/notepads?limit=100&offset=0", "GET").then(function (payload) {
+    return requestJSON(token, "/memo/notepads?limit=20&offset=0", "GET").then(function (payload) {
       return arrayItems(valueForKey(payload, "notepads")).map(function (notepad) {
         return {
           id: String(valueForKey(notepad, "id") || ""),
