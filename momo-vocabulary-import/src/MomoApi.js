@@ -142,8 +142,12 @@ var __MN_MOMO_API_GLOBAL__ = (function () {
   }
 
   function listNotepads(token) {
-    return requestJSON(token, "/memo/notepads", "GET").then(function (payload) {
-      return arrayItems(valueForKey(payload, "notepads")).map(function (notepad) {
+    return requestJSON(token, "/memo/notepads?limit=100&offset=0", "GET").then(function (payload) {
+      const directList = valueForKey(payload, "notepads");
+      const data = valueForKey(payload, "data");
+      const nestedList = valueForKey(data, "notepads");
+      const list = !isNativeNil(directList) ? directList : nestedList;
+      return arrayItems(list).map(function (notepad) {
         return {
           id: String(valueForKey(notepad, "id") || ""),
           title: String(valueForKey(notepad, "title") || "未命名云词本"),

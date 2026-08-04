@@ -17,8 +17,7 @@ test("MomoApi uses the request, JSON, and HTTP-status methods exported by Margin
 
 test("MomoApi uses the current memo notepad endpoint", () => {
   assert.match(source, /\/memo\/notepads/);
-  assert.match(source, /requestJSON\(token, "\/memo\/notepads", "GET"\)/);
-  assert.doesNotMatch(source, /limit=100/);
+  assert.match(source, /requestJSON\(token, "\/memo\/notepads\?limit=100&offset=0", "GET"\)/);
 });
 
 test("MomoApi preserves the API's nested authorization error message", () => {
@@ -45,4 +44,9 @@ test("MomoApi does not mistake MarginNote's NSNull success placeholder for an er
 test("MomoApi reads native NSArray count methods", () => {
   assert.match(source, /typeof list\.count === "function"/);
   assert.match(source, /list\.count\(\)/);
+});
+
+test("MomoApi supports direct and data-wrapped notepad lists", () => {
+  assert.match(source, /valueForKey\(payload, "notepads"\)/);
+  assert.match(source, /valueForKey\(data, "notepads"\)/);
 });
