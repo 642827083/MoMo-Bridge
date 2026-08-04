@@ -30,3 +30,9 @@ test("MomoApi accepts a token pasted with an optional Bearer prefix", () => {
   assert.match(source, /replace\(\/\^Bearer\\s\+\/i, ""\)/);
   assert.match(source, /`Bearer \$\{apiToken\}`/);
 });
+
+test("MomoApi follows MarginNote's complete request configuration", () => {
+  assert.match(source, /request\.setTimeoutInterval\(10\)/);
+  assert.match(source, /request\.setAllHTTPHeaderFields\(headers\)/);
+  assert.match(source, /"User-Agent": "Mozilla\/5\.0/);
+});

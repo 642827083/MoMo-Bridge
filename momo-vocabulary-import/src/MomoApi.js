@@ -81,11 +81,17 @@ var __MN_MOMO_API_GLOBAL__ = (function () {
       const apiToken = normalizedToken(token);
       const request = NSMutableURLRequest.requestWithURL(NSURL.URLWithString(`${API_ROOT}${path}`));
       request.setHTTPMethod(method);
-      request.setValueForHTTPHeaderField("application/json", "Accept");
-      request.setValueForHTTPHeaderField(`Bearer ${apiToken}`, "Authorization");
+      request.setTimeoutInterval(10);
+
+      const headers = {
+        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X)",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "Authorization": `Bearer ${apiToken}`,
+      };
+      request.setAllHTTPHeaderFields(headers);
 
       if (body !== undefined) {
-        request.setValueForHTTPHeaderField("application/json", "Content-Type");
         request.setHTTPBody(NSJSONSerialization.dataWithJSONObjectOptions(body, 0));
       }
 
