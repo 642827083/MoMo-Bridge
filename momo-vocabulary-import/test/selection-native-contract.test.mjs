@@ -13,3 +13,9 @@ test("MomoSelection normalizes native NSString note titles", () => {
   assert.match(source, /const title = String\(rawTitle\)\.trim\(\)/);
   assert.doesNotMatch(source, /typeof title === "string"/);
 });
+
+test("MomoSelection supports bridged property methods", () => {
+  assert.match(source, /typeof value === "function"/);
+  assert.match(source, /value\.call\(object\)/);
+  assert.match(source, /nativeMember\(mindmapView, "selViewLst"\)/);
+});
