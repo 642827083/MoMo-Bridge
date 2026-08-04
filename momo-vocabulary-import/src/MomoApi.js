@@ -105,7 +105,7 @@ var __MN_MOMO_API_GLOBAL__ = (function () {
   }
 
   function listNotepads(token) {
-    return requestJSON(token, "/notepads?limit=100&offset=0", "GET").then(function (payload) {
+    return requestJSON(token, "/memo/notepads?limit=100&offset=0", "GET").then(function (payload) {
       return arrayItems(valueForKey(payload, "notepads")).map(function (notepad) {
         return {
           id: String(valueForKey(notepad, "id") || ""),
@@ -168,7 +168,7 @@ var __MN_MOMO_API_GLOBAL__ = (function () {
   }
 
   function importWords(token, bookId, words) {
-    const path = `/notepads/${encodeURIComponent(bookId)}`;
+    const path = `/memo/notepads/${encodeURIComponent(bookId)}`;
     return requestJSON(token, path, "GET").then(function (payload) {
       const before = valueForKey(payload, "notepad");
       if (!before) throw new Error("未找到目标云词本，请重新加载列表后选择");

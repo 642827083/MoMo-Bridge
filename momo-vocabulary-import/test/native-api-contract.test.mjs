@@ -14,3 +14,8 @@ test("MomoApi uses the request, JSON, and HTTP-status methods exported by Margin
   assert.doesNotMatch(source, /request\.HTTPBody\s*=/);
   assert.doesNotMatch(source, /OptionsError/);
 });
+
+test("MomoApi uses the current memo notepad endpoint", () => {
+  assert.match(source, /\/memo\/notepads/);
+  assert.doesNotMatch(source, /"\/notepads\?limit=100/);
+});
