@@ -9,7 +9,10 @@ var __MN_MOMO_API_GLOBAL__ = (function () {
 
   function arrayItems(list) {
     if (!list) return [];
-    const count = Number(list.count !== undefined ? list.count : list.length);
+    const rawCount = typeof list.count === "function"
+      ? list.count()
+      : list.count !== undefined ? list.count : list.length;
+    const count = Number(rawCount);
     if (!Number.isFinite(count) || count < 1) return [];
 
     const items = [];

@@ -41,3 +41,8 @@ test("MomoApi does not mistake MarginNote's NSNull success placeholder for an er
   assert.match(source, /value instanceof NSNull/);
   assert.match(source, /if \(!isNativeNil\(error\)\)/);
 });
+
+test("MomoApi reads native NSArray count methods", () => {
+  assert.match(source, /typeof list\.count === "function"/);
+  assert.match(source, /list\.count\(\)/);
+});
