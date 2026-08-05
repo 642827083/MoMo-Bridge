@@ -6,13 +6,16 @@ const source = await readFile(new URL("../web/src/App.jsx", import.meta.url), "u
 
 test("Token help link appears above the Token input", () => {
   const labelIndex = source.indexOf('htmlFor="momo-token"');
-  const linkIndex = source.indexOf('href="https://open.maimemo.com/#/"');
+  const linkIndex = source.indexOf("href={TOKEN_HELP_URL}");
   const inputIndex = source.indexOf('id="momo-token"');
 
   assert.ok(labelIndex >= 0, "Token label should exist");
   assert.ok(linkIndex > labelIndex, "Token help link should follow the label");
   assert.ok(inputIndex > linkIndex, "Token input should follow the help link");
   assert.match(source, /如何获取墨墨 Token/);
+  assert.match(source, /TOKEN_HELP_URL/);
+  assert.match(source, /openExternalURL/);
+  assert.match(source, /event\.preventDefault\(\)/);
   assert.match(source, /target="_blank"/);
   assert.match(source, /rel="noreferrer"/);
 });

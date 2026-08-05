@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const source = await readFile(new URL("../src/MomoApi.js", import.meta.url), "utf8");
+const bridgeSource = await readFile(new URL("../src/WebBridgeCommands.js", import.meta.url), "utf8");
 
 test("MomoApi uses the request, JSON, and HTTP-status methods exported by MarginNote", () => {
   assert.match(source, /request\.setHTTPMethod\(method\)/);
@@ -67,4 +68,11 @@ test("MomoApi verifies imports with a fresh notepad read", () => {
 test("MomoApi can classify words from raw notepad content", () => {
   assert.match(source, /Some API responses omit the parsed list/);
   assert.match(source, /content\.split\(\/\\r\?\\n\//);
+});
+
+test("Web bridge opens the token help page outside the plugin web view", () => {
+  assert.match(bridgeSource, /function openExternalURL\(context, payload\)/);
+  assert.match(bridgeSource, /https:\/\/open\.maimemo\.com\//);
+  assert.match(bridgeSource, /UIApplication\.sharedApplication\(\)\.openURL\(url\)/);
+  assert.match(bridgeSource, /openExternalURL,/);
 });

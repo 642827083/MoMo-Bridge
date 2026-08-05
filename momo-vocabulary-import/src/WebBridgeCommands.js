@@ -29,6 +29,18 @@ var __MN_WEB_BRIDGE_COMMANDS_GLOBAL__ = (function () {
     };
   }
 
+  function openExternalURL(context, payload) {
+    const urlString = payload && typeof payload.url === "string" ? payload.url.trim() : "";
+    if (!urlString || !urlString.startsWith("https://open.maimemo.com/")) {
+      throw new Error("只允许打开墨墨开放平台地址");
+    }
+
+    const url = NSURL.URLWithString(urlString);
+    if (!url) throw new Error("墨墨开放平台地址无效");
+    UIApplication.sharedApplication().openURL(url);
+    return { opened: true };
+  }
+
   function savedToken() {
     return NSUserDefaults.standardUserDefaults().objectForKey(TOKEN_KEY) || "";
   }
@@ -84,6 +96,7 @@ var __MN_WEB_BRIDGE_COMMANDS_GLOBAL__ = (function () {
     ping,
     echo,
     closePanel,
+    openExternalURL,
     getSettings,
     saveSettings,
     getSelectedTitles,

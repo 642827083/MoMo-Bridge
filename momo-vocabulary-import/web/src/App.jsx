@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { collectLemmas } from "./domain/lemma.mjs";
 import MNBridge from "./lib/mnBridge";
 
+const TOKEN_HELP_URL = "https://open.maimemo.com/#/";
+
 function App() {
   const [token, setToken] = useState("");
   const [bookId, setBookId] = useState("");
@@ -30,6 +32,13 @@ function App() {
 
   async function saveSettings(nextBookId = bookId) {
     await MNBridge.send("saveSettings", { token, bookId: nextBookId });
+  }
+
+  function openTokenHelp(event) {
+    event.preventDefault();
+    MNBridge.send("openExternalURL", { url: TOKEN_HELP_URL }).catch(() => {
+      setMessage("无法打开墨墨开放平台，请手动访问 https://open.maimemo.com/#/");
+    });
   }
 
   async function loadNotepads() {
@@ -114,9 +123,10 @@ function App() {
           <label className="field-label" htmlFor="momo-token">墨墨 Token</label>
           <a
             className="token-help"
-            href="https://open.maimemo.com/#/"
+            href={TOKEN_HELP_URL}
             target="_blank"
             rel="noreferrer"
+            onClick={openTokenHelp}
           >
             如何获取墨墨 Token
           </a>
