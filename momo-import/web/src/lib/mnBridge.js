@@ -10,7 +10,7 @@ function ensureBridgeReceiver() {
   }
 
   if (typeof window.__MN_WEB_BRIDGE_RECEIVE_FN__ === "function") {
-    return;
+    if (typeof window.__MN_WEB_BRIDGE_PROGRESS_FN__ === "function") return;
   }
 
   window.__MN_WEB_BRIDGE_RECEIVE_FN__ = (raw) => {
@@ -29,9 +29,17 @@ function ensureBridgeReceiver() {
 
     pending.resolve(response.payload);
   };
+
+  window.__MN_WEB_BRIDGE_PROGRESS_FN__ = (raw) => {
+    const progress = JSON.parse(raw);
+    const pending = window.__MNBridgePending[progress.requestId];
+    if (pending && typeof pending.onProgress === "function") {
+      pending.onProgress(progress.payload);
+    }
+  };
 }
 
-function send(command, payload = null) {
+function send(command, payload = null, options = {}) {
   ensureBridgeReceiver();
 
   const requestId = nextRequestId();
@@ -50,6 +58,7 @@ function send(command, payload = null) {
       reject(error) {
         reject(error);
       },
+      onProgress: typeof options.onProgress === "function" ? options.onProgress : null,
     };
 
     const encoded = encodeURIComponent(JSON.stringify(message));
@@ -61,7 +70,7 @@ function send(command, payload = null) {
       try {
         iframe.remove();
       } catch (error) {
-        // no-op
+        // 空操作。
       }
     }, 600);
   });

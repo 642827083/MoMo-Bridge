@@ -1,8 +1,8 @@
 {
   "addonid": "cn.marginnote.momo-vocabulary-import",
-  "author": "mnandmomo",
-  "title": "墨墨单词书导入",
-  "version": "0.2.11",
+  "author": "乔木Joe",
+  "title": "MoMo Import",
+  "version": "2.3.1",
   "marginnote_version_min": "4.2.3",
   "cert_key": ""
 }

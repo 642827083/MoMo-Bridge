@@ -85,6 +85,16 @@ var __MN_WEB_API_GLOBAL__ = (function () {
     evaluateScript(webView, script);
   }
 
+  function sendBridgeProgress(webView, requestId, progress) {
+    const message = {
+      requestId,
+      payload: progress === undefined ? null : progress,
+    };
+    const script = `typeof window.__MN_WEB_BRIDGE_PROGRESS_FN__==='function'&&` +
+      `window.__MN_WEB_BRIDGE_PROGRESS_FN__('${encodeBridgeJSON(message)}')`;
+    evaluateScript(webView, script);
+  }
+
   function normalizeBridgeError(error, command) {
     return {
       message: error && error.message ? error.message : String(error),
@@ -304,7 +314,7 @@ var __MN_WEB_API_GLOBAL__ = (function () {
   }
 
   function setupWebPanelUI(controller) {
-    controller.navigationItem.title = "__MN_WEB_PANEL_TITLE__";
+    controller.navigationItem.title = "MoMo Import";
     controller.view.autoresizingMask = 0;
     controller.view.backgroundColor = UIColor.clearColor();
     controller.view.layer.shadowOffset = { width: 0, height: 2 };
@@ -332,7 +342,7 @@ var __MN_WEB_API_GLOBAL__ = (function () {
     controller.titleBar.autoresizingMask = (1 << 1);
 
     controller.titleLabel = new UILabel({ x: 40, y: 0, width: initWidth - 80, height: TITLE_HEIGHT });
-    controller.titleLabel.text = "__MN_WEB_PANEL_TITLE__";
+    controller.titleLabel.text = "MoMo Import";
     controller.titleLabel.textAlignment = 1;
     controller.titleLabel.font = UIFont.boldSystemFontOfSize(14);
     controller.titleLabel.textColor = UIColor.darkGrayColor();
@@ -418,7 +428,7 @@ var __MN_WEB_API_GLOBAL__ = (function () {
     saveWebPanelFrame(controller);
   }
 
-  function dispatchBridgeCommand(controller, message) {
+  function dispatchBridgeCommand(controller, webView, message) {
     const commandTable = __MN_WEB_BRIDGE_COMMANDS_GLOBAL__.commands;
     const handler = commandTable[message.command];
 
@@ -430,6 +440,9 @@ var __MN_WEB_API_GLOBAL__ = (function () {
       controller,
       addon: controller.addon,
       closePanel: performCloseWindow,
+      reportProgress: function (progress) {
+        sendBridgeProgress(webView, message.requestId, progress);
+      },
     };
 
     return handler(context, message.payload);
@@ -586,7 +599,7 @@ var __MN_WEB_API_GLOBAL__ = (function () {
         }
 
         const message = decodeBridgeMessage(url);
-        const result = dispatchBridgeCommand(self, message);
+        const result = dispatchBridgeCommand(self, webView, message);
 
         if (isPromiseLike(result)) {
           result.then(function (payload) {

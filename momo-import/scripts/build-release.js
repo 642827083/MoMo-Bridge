@@ -98,6 +98,19 @@ function buildWebAssets(rootDir) {
   }
 }
 
+function clearDevServerConfig(rootDir) {
+  const configPath = path.join(rootDir, "src", "WebDevServerConfig.js");
+  const source = fs.readFileSync(configPath, "utf8");
+  const functionMatch = source.match(/function\s+([A-Za-z0-9_]+)\s*\(/);
+  if (!functionMatch) {
+    throw new Error(`无法读取开发服务器配置函数：${configPath}`);
+  }
+  fs.writeFileSync(
+    configPath,
+    `function ${functionMatch[1]}() {\n  return "";\n}\n`,
+  );
+}
+
 function archiveRelease(distDir, outputPath) {
   if (process.platform !== "win32") {
     execSync(`cd "${distDir}" && zip -r -q "${outputPath}" .`);
@@ -106,29 +119,43 @@ function archiveRelease(distDir, outputPath) {
 
   const escapePowerShell = (value) => value.replace(/'/g, "''");
   const sourcePath = escapePowerShell(path.join(distDir, "*"));
-  const destinationPath = escapePowerShell(outputPath);
+  const zipPath = `${outputPath}.zip`;
+  if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath);
+  const destinationPath = escapePowerShell(zipPath);
   execFileSync("powershell.exe", [
     "-NoProfile",
     "-NonInteractive",
     "-Command",
     `Compress-Archive -Path '${sourcePath}' -DestinationPath '${destinationPath}' -Force`,
   ], { stdio: "inherit" });
+  fs.renameSync(zipPath, outputPath);
 }
 
 function build() {
   const rootDir = path.join(__dirname, "..");
+  const releaseBuild = process.argv.includes("--release");
   const pkg = JSON.parse(
     fs.readFileSync(path.join(rootDir, "package.json"), "utf8"),
   );
   if (typeof pkg.name !== "string" || !pkg.name.trim()) {
     throw new Error("package.json缺少有效name，无法生成发布文件名");
   }
-  const addonName = pkg.name.trim().replace(/^@/, "").replace(/\//g, "-");
+  const addonName = typeof pkg.mnaddonFileName === "string" && pkg.mnaddonFileName.trim()
+    ? pkg.mnaddonFileName.trim()
+    : pkg.name.trim().replace(/^@/, "").replace(/\//g, "-");
   const distDir = path.join(rootDir, "dist");
   const srcDir = path.join(rootDir, "src");
-  const outputName = `${addonName}-v${pkg.version}.mnaddon`;
+  const outputName = releaseBuild
+    ? `${addonName}-v${pkg.version}.mnaddon`
+    : `${addonName} Test.mnaddon`;
   const outputPath = path.join(rootDir, outputName);
 
+  if (releaseBuild && fs.existsSync(outputPath)) {
+    throw new Error(`正式安装包已存在，为避免覆盖已发布文件已停止构建：${outputName}`);
+  }
+
+  // 安装包必须始终加载包内页面，不能携带本机开发服务器地址。
+  clearDevServerConfig(rootDir);
   buildWebAssets(rootDir);
 
   if (fs.existsSync(distDir)) {
@@ -139,7 +166,9 @@ function build() {
   copyRecursiveSync(srcDir, distDir);
   minifyFiles(distDir);
 
-  if (fs.existsSync(outputPath)) {
+  // 开发构建固定使用同一个文件名，方便反复安装最新测试包。
+  // 正式版本在上方受到保护，脚本不会覆盖已有文件。
+  if (!releaseBuild && fs.existsSync(outputPath)) {
     fs.unlinkSync(outputPath);
   }
 

@@ -60,7 +60,56 @@ var __MN_MOMO_SELECTION_GLOBAL__ = (function () {
     return titleFromObject(selectedView);
   }
 
-  function selectedTitles(window) {
+  function noteFromSelectedView(selectedView) {
+    if (!selectedView) return undefined;
+
+    const candidates = [
+      nativeMember(selectedView, "note"),
+      nativeMember(selectedView, "node"),
+      nativeMember(selectedView, "mindMapNode"),
+      nativeMember(selectedView, "mindmapNode"),
+      nativeMember(selectedView, "view"),
+      selectedView,
+    ];
+
+    for (const candidate of candidates) {
+      if (!candidate) continue;
+
+      const directTitle = nativeMember(candidate, "noteTitle");
+      if (directTitle !== undefined && directTitle !== null) return candidate;
+
+      const nestedNote = nativeMember(candidate, "note");
+      const nestedTitle = nativeMember(nestedNote, "noteTitle");
+      if (nestedTitle !== undefined && nestedTitle !== null) return nestedNote;
+    }
+
+    return undefined;
+  }
+
+  function appendText(parts, value) {
+    if (value === undefined || value === null) return;
+    const text = String(value).trim();
+    if (text) parts.push(text);
+  }
+
+  function noteText(note) {
+    if (!note) return "";
+
+    const parts = [];
+    appendText(parts, nativeMember(note, "excerptText"));
+    appendText(parts, nativeMember(note, "notesText"));
+
+    for (const comment of nativeArrayItems(nativeMember(note, "comments"))) {
+      if (String(nativeMember(comment, "type") || "") !== "TextNote") continue;
+      appendText(parts, nativeMember(comment, "text"));
+    }
+
+    // allNoteText() 是较旧 MarginNote 版本中最完整的备用读取方式。
+    if (parts.length === 0) appendText(parts, nativeMember(note, "allNoteText"));
+    return parts.join("\n");
+  }
+
+  function selectedCards(window) {
     const application = Application.sharedInstance();
     const focusWindow = nativeMember(application, "focusWindow");
     const studyController = application.studyController(window || focusWindow);
@@ -68,7 +117,7 @@ var __MN_MOMO_SELECTION_GLOBAL__ = (function () {
     const mindmapView = nativeMember(notebookController, "mindmapView");
     const selectedList = nativeMember(mindmapView, "selViewLst");
     const selectedViews = nativeArrayItems(selectedList);
-    const titles = [];
+    const cards = [];
     const titleSamples = [];
 
     lastDebug = {
@@ -88,14 +137,22 @@ var __MN_MOMO_SELECTION_GLOBAL__ = (function () {
         if (titleSamples.length < 3) titleSamples.push("<未读取到标题>");
         continue;
       }
+
       const title = String(rawTitle).trim();
       if (titleSamples.length < 3) titleSamples.push(title || "<空标题>");
-      if (title) {
-        titles.push(title);
-      }
+      if (!title) continue;
+
+      cards.push({
+        title,
+        text: noteText(noteFromSelectedView(selectedView)),
+      });
     }
 
-    return titles;
+    return cards;
+  }
+
+  function selectedTitles(window) {
+    return selectedCards(window).map((card) => card.title);
   }
 
   function selectionDebug() {
@@ -103,6 +160,7 @@ var __MN_MOMO_SELECTION_GLOBAL__ = (function () {
   }
 
   return {
+    selectedCards,
     selectedTitles,
     selectionDebug,
   };
