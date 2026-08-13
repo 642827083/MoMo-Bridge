@@ -405,7 +405,10 @@ function App() {
                   </label>
                   <details className="option-info">
                     <summary aria-label="查看提前复习说明" title="查看提前复习说明">i</summary>
-                    <p>需 10 级账号并开启墨墨自动同步；开启后会调整当前学习计划。</p>
+                    <p>
+                      <span className="option-info-line">需 10 级账号并开启墨墨自动同步</span>
+                      <span className="option-info-line">开启后会调整当前学习计划。</span>
+                    </p>
                   </details>
                 </div>
               ) : null}
