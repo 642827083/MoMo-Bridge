@@ -1,0 +1,283 @@
+var __MN_WEB_BRIDGE_COMMANDS_GLOBAL__ = (function () {
+  const TOKEN_KEY = "cn.marginnote.momo-vocabulary-import.token";
+  const BOOK_ID_KEY = "cn.marginnote.momo-vocabulary-import.book-id";
+
+  function toBridgePayload(value) {
+    return value === undefined ? null : value;
+  }
+
+  function ping(context, payload) {
+    return {
+      now: new Date().toISOString(),
+      source: "mn-addon",
+      payload: toBridgePayload(payload),
+      addon: context.addon && context.addon.window ? "available" : "unavailable",
+    };
+  }
+
+  function echo(context, payload) {
+    return {
+      echoed: toBridgePayload(payload),
+    };
+  }
+
+  function closePanel(context, payload) {
+    context.closePanel(context.controller);
+    return {
+      closed: true,
+      payload: toBridgePayload(payload),
+    };
+  }
+
+  function openExternalURL(context, payload) {
+    const urlString = payload && typeof payload.url === "string" ? payload.url.trim() : "";
+    if (!urlString || !urlString.startsWith("https://open.maimemo.com/")) {
+      throw new Error("只允许打开墨墨开放平台地址");
+    }
+
+    const url = NSURL.URLWithString(urlString);
+    if (!url) throw new Error("墨墨开放平台地址无效");
+    UIApplication.sharedApplication().openURL(url);
+    return { opened: true };
+  }
+
+  function savedToken() {
+    return NSUserDefaults.standardUserDefaults().objectForKey(TOKEN_KEY) || "";
+  }
+
+  function savedBookId() {
+    return NSUserDefaults.standardUserDefaults().objectForKey(BOOK_ID_KEY) || "";
+  }
+
+  function getSettings() {
+    return {
+      token: savedToken(),
+      bookId: savedBookId(),
+    };
+  }
+
+  function saveSettings(context, payload) {
+    const token = payload && typeof payload.token === "string" ? payload.token.trim() : "";
+    const bookId = payload && typeof payload.bookId === "string" ? payload.bookId.trim() : "";
+    const defaults = NSUserDefaults.standardUserDefaults();
+    defaults.setObjectForKey(token, TOKEN_KEY);
+    defaults.setObjectForKey(bookId, BOOK_ID_KEY);
+    return { saved: true, tokenConfigured: !!token, bookId };
+  }
+
+  function getSelectedTitles(context) {
+    if (!context.addon || !context.addon.window) {
+      throw new Error("当前未连接到 MarginNote 学习窗口");
+    }
+    const titles = __MN_MOMO_SELECTION_GLOBAL__.selectedTitles(context.addon.window);
+    return {
+      titles,
+      debug: __MN_MOMO_SELECTION_GLOBAL__.selectionDebug(),
+    };
+  }
+
+  function getSelectedCards(context) {
+    if (!context.addon || !context.addon.window) {
+      throw new Error("当前未连接到 MarginNote 学习窗口");
+    }
+    const cards = __MN_MOMO_SELECTION_GLOBAL__.selectedCards(context.addon.window);
+    return {
+      cards,
+      titles: cards.map(function (card) { return card.title; }),
+      debug: __MN_MOMO_SELECTION_GLOBAL__.selectionDebug(),
+    };
+  }
+
+  function listMomoNotepads() {
+    return __MN_MOMO_API_GLOBAL__.listNotepads(savedToken()).then(function (notepads) {
+      return { notepads };
+    });
+  }
+
+  function testMomoConnection(context, payload) {
+    const token = payload && typeof payload.token === "string" ? payload.token.trim() : "";
+    if (!token) {
+      return Promise.resolve({
+        tokenValid: false,
+        canReadNotepads: false,
+        notepadCount: 0,
+        message: "请先填写墨墨开放 API Token",
+      });
+    }
+
+    return __MN_MOMO_API_GLOBAL__.listNotepads(token).then(function (notepads) {
+      return {
+        tokenValid: true,
+        canReadNotepads: true,
+        notepadCount: Array.isArray(notepads) ? notepads.length : 0,
+        message: `连接成功，已读取 ${Array.isArray(notepads) ? notepads.length : 0} 本云词本`,
+      };
+    }).catch(function (error) {
+      const reason = error && error.message ? error.message : "无法读取墨墨云词本";
+      const status = Number(error && error.statusCode);
+      const tokenInvalid = status === 401 || status === 403 || /unauthorized|invalid token|token|未授权|无效/i.test(reason);
+      return {
+        tokenValid: !tokenInvalid,
+        canReadNotepads: false,
+        notepadCount: 0,
+        message: tokenInvalid ? `Token 无效或已过期：${reason}` : reason,
+      };
+    });
+  }
+
+  function importOptions(payload) {
+    const mode = payload && typeof payload.mode === "string" ? payload.mode : "both";
+    const hasBooleanOptions = payload && (
+      typeof payload.addWords === "boolean" ||
+      typeof payload.addExamples === "boolean" ||
+      typeof payload.addStudy === "boolean"
+    );
+    if (!hasBooleanOptions && ["both", "words", "examples"].indexOf(mode) < 0) {
+      throw new Error("导入模式无效，请重新选择");
+    }
+    const addWords = hasBooleanOptions ? payload.addWords === true : mode !== "examples";
+    const addExamples = hasBooleanOptions ? payload.addExamples === true : mode !== "words";
+    const addStudy = hasBooleanOptions ? payload.addStudy === true : false;
+    return {
+      addWords,
+      addExamples,
+      addStudy,
+      advanceStudy: addStudy && payload.advanceStudy === true,
+    };
+  }
+
+  function executeImport(context, payload, bookId, metadata) {
+    const words = payload && Array.isArray(payload.words) ? payload.words : [];
+    const examples = payload && Array.isArray(payload.examples) ? payload.examples : [];
+    const options = importOptions(payload);
+    if (!options.addWords && !options.addExamples && !options.addStudy) {
+      throw new Error("请至少选择一种导入内容");
+    }
+    if (options.addWords && !bookId) throw new Error("当前模式需要先选择目标云词本");
+    if (words.length === 0) throw new Error("没有可导入的单词");
+    if (words.length > 1000) throw new Error("一次最多导入 1000 个单词");
+
+    const apiOptions = {
+      addWords: options.addWords,
+      addExamples: options.addExamples,
+      addStudy: options.addStudy,
+      advanceStudy: options.advanceStudy,
+      wordbookWords: payload && Array.isArray(payload.wordbookWords)
+        ? payload.wordbookWords
+        : words,
+      studyWords: payload && Array.isArray(payload.studyWords)
+        ? payload.studyWords
+        : words,
+      onProgress: function (progress) {
+        if (context && typeof context.reportProgress === "function") {
+          context.reportProgress(progress);
+        }
+      },
+    };
+
+    function saveHistory(result) {
+      try {
+        const history = __MN_MOMO_IMPORT_HISTORY_GLOBAL__.recordImport(payload, result, {
+          bookId,
+          kind: metadata && metadata.kind,
+          parentId: metadata && metadata.parentId,
+        });
+        return Object.assign({}, result, { history });
+      } catch (error) {
+        return Object.assign({}, result, {
+          historyError: error && error.message ? error.message : "导入成功，但历史记录保存失败",
+        });
+      }
+    }
+
+    return __MN_MOMO_API_GLOBAL__.importWords(
+      savedToken(),
+      bookId,
+      words,
+      examples,
+      apiOptions,
+    ).then(saveHistory).catch(function (error) {
+      const reason = error && error.message ? error.message : "导入任务失败";
+      const failedResult = {
+        success: [],
+        duplicate: [],
+        failed: options.addWords ? apiOptions.wordbookWords.slice() : [],
+        examples: {
+          success: [],
+          duplicate: [],
+          failed: options.addExamples ? examples.map(function (example) {
+            return Object.assign({}, example, { reason });
+          }) : [],
+          error: options.addExamples ? reason : "",
+        },
+        study: {
+          requestedCount: options.addStudy ? apiOptions.studyWords.length : 0,
+          resolvedCount: 0,
+          addedCount: 0,
+          notAddedCount: options.addStudy ? apiOptions.studyWords.length : 0,
+          missing: [],
+          advanceRequested: options.advanceStudy,
+          advancedCount: 0,
+          notAdvancedCount: options.advanceStudy ? apiOptions.studyWords.length : 0,
+          advanceError: options.advanceStudy ? reason : "",
+          error: options.addStudy ? reason : "",
+        },
+      };
+      try {
+        saveHistory(failedResult);
+      } catch (ignored) {
+        // 历史记录保存失败时仍保留原始接口错误。
+      }
+      throw error;
+    });
+  }
+
+  function importMomoWords(context, payload) {
+    return executeImport(context, payload, savedBookId(), { kind: "import" });
+  }
+
+  function listImportHistory() {
+    return {
+      entries: __MN_MOMO_IMPORT_HISTORY_GLOBAL__.listHistory(),
+    };
+  }
+
+  function retryImportHistory(context, payload) {
+    const historyId = payload && typeof payload.historyId === "string"
+      ? payload.historyId
+      : "";
+    const entry = __MN_MOMO_IMPORT_HISTORY_GLOBAL__.findHistory(historyId);
+    if (!entry) throw new Error("未找到这条导入历史，可能已被较新的记录替换");
+    const retry = __MN_MOMO_IMPORT_HISTORY_GLOBAL__.retryPlan(entry);
+    if (!retry || (!retry.addWords && !retry.addExamples && !retry.addStudy)) {
+      throw new Error("这条历史没有可重试的失败项");
+    }
+    if (retry.addWords && !retry.bookId) {
+      throw new Error("原导入记录没有目标云词本，无法重试失败单词");
+    }
+    return executeImport(context, retry, retry.bookId, {
+      kind: "retry",
+      parentId: entry.id,
+    });
+  }
+
+  const commands = {
+    ping,
+    echo,
+    closePanel,
+    openExternalURL,
+    getSettings,
+    saveSettings,
+    getSelectedTitles,
+    getSelectedCards,
+    listMomoNotepads,
+    testMomoConnection,
+    importMomoWords,
+    listImportHistory,
+    retryImportHistory,
+  };
+
+  return {
+    commands,
+  };
+})();

@@ -1,0 +1,179 @@
+const fs = require("fs");
+const path = require("path");
+const { execFileSync, execSync } = require("child_process");
+const CleanCSS = require("clean-css");
+
+function copyRecursiveSync(src, dest) {
+  if (fs.statSync(src).isDirectory()) {
+    if (!fs.existsSync(dest)) fs.mkdirSync(dest);
+    fs.readdirSync(src).forEach((child) => {
+      copyRecursiveSync(path.join(src, child), path.join(dest, child));
+    });
+    return;
+  }
+  fs.copyFileSync(src, dest);
+}
+
+function getAllFiles(dir, files = []) {
+  fs.readdirSync(dir).forEach((file) => {
+    const name = path.join(dir, file);
+    if (fs.statSync(name).isDirectory()) {
+      getAllFiles(name, files);
+    } else {
+      files.push(name);
+    }
+  });
+  return files;
+}
+
+function getLocalBin(rootDir, name) {
+  const binDir = path.join(rootDir, "node_modules", ".bin");
+  const ext = process.platform === "win32" ? ".cmd" : "";
+  return path.join(binDir, `${name}${ext}`);
+}
+
+function runLocalBin(rootDir, name, args) {
+  const binPath = getLocalBin(rootDir, name);
+  execFileSync(binPath, args, {
+    stdio: "ignore",
+    shell: process.platform === "win32",
+  });
+}
+
+function minifyCssFile(filePath) {
+  const source = fs.readFileSync(filePath, "utf8");
+  const result = new CleanCSS().minify(source);
+
+  if (result.errors.length > 0) {
+    throw new Error(`CSS minify failed for ${filePath}: ${result.errors.join("; ")}`);
+  }
+
+  fs.writeFileSync(filePath, result.styles);
+}
+
+function minifyFiles(distDir) {
+  const rootDir = path.join(__dirname, "..");
+  const jsFiles = getAllFiles(distDir).filter((f) => f.endsWith(".js"));
+  jsFiles.forEach((file) => {
+    runLocalBin(rootDir, "terser", [
+      file,
+      "-o",
+      file,
+      "--compress",
+      "--mangle",
+    ]);
+  });
+
+  const htmlFiles = getAllFiles(distDir).filter((f) => f.endsWith(".html"));
+  htmlFiles.forEach((file) => {
+    runLocalBin(rootDir, "html-minifier-terser", [
+      file,
+      "-o",
+      file,
+      "--collapse-whitespace",
+      "--remove-comments",
+      "--minify-js",
+      "true",
+      "--minify-css",
+      "true",
+    ]);
+  });
+
+  const cssFiles = getAllFiles(distDir).filter((f) => f.endsWith(".css"));
+  cssFiles.forEach((file) => {
+    minifyCssFile(file);
+  });
+}
+
+function buildWebAssets(rootDir) {
+  const webBuildScript = path.join(rootDir, "scripts", "web-build.js");
+  execFileSync(process.execPath, [webBuildScript], {
+    cwd: rootDir,
+    stdio: "inherit",
+  });
+
+  const webIndexPath = path.join(rootDir, "src", "web-dist", "index.html");
+  if (!fs.existsSync(webIndexPath)) {
+    throw new Error(`Web dist entry missing: ${webIndexPath}`);
+  }
+}
+
+function clearDevServerConfig(rootDir) {
+  const configPath = path.join(rootDir, "src", "WebDevServerConfig.js");
+  const source = fs.readFileSync(configPath, "utf8");
+  const functionMatch = source.match(/function\s+([A-Za-z0-9_]+)\s*\(/);
+  if (!functionMatch) {
+    throw new Error(`无法读取开发服务器配置函数：${configPath}`);
+  }
+  fs.writeFileSync(
+    configPath,
+    `function ${functionMatch[1]}() {\n  return "";\n}\n`,
+  );
+}
+
+function archiveRelease(distDir, outputPath) {
+  if (process.platform !== "win32") {
+    execSync(`cd "${distDir}" && zip -r -q "${outputPath}" .`);
+    return;
+  }
+
+  const escapePowerShell = (value) => value.replace(/'/g, "''");
+  const sourcePath = escapePowerShell(path.join(distDir, "*"));
+  const zipPath = `${outputPath}.zip`;
+  if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath);
+  const destinationPath = escapePowerShell(zipPath);
+  execFileSync("powershell.exe", [
+    "-NoProfile",
+    "-NonInteractive",
+    "-Command",
+    `Compress-Archive -Path '${sourcePath}' -DestinationPath '${destinationPath}' -Force`,
+  ], { stdio: "inherit" });
+  fs.renameSync(zipPath, outputPath);
+}
+
+function build() {
+  const rootDir = path.join(__dirname, "..");
+  const releaseBuild = process.argv.includes("--release");
+  const pkg = JSON.parse(
+    fs.readFileSync(path.join(rootDir, "package.json"), "utf8"),
+  );
+  if (typeof pkg.name !== "string" || !pkg.name.trim()) {
+    throw new Error("package.json缺少有效name，无法生成发布文件名");
+  }
+  const addonName = typeof pkg.mnaddonFileName === "string" && pkg.mnaddonFileName.trim()
+    ? pkg.mnaddonFileName.trim()
+    : pkg.name.trim().replace(/^@/, "").replace(/\//g, "-");
+  const distDir = path.join(rootDir, "dist");
+  const srcDir = path.join(rootDir, "src");
+  const outputName = releaseBuild
+    ? `${addonName}-v${pkg.version}.mnaddon`
+    : `${addonName} Test.mnaddon`;
+  const outputPath = path.join(rootDir, outputName);
+
+  if (releaseBuild && fs.existsSync(outputPath)) {
+    throw new Error(`正式安装包已存在，为避免覆盖已发布文件已停止构建：${outputName}`);
+  }
+
+  // 安装包必须始终加载包内页面，不能携带本机开发服务器地址。
+  clearDevServerConfig(rootDir);
+  buildWebAssets(rootDir);
+
+  if (fs.existsSync(distDir)) {
+    fs.rmSync(distDir, { recursive: true, force: true });
+  }
+  fs.mkdirSync(distDir, { recursive: true });
+
+  copyRecursiveSync(srcDir, distDir);
+  minifyFiles(distDir);
+
+  // 开发构建固定使用同一个文件名，方便反复安装最新测试包。
+  // 正式版本在上方受到保护，脚本不会覆盖已有文件。
+  if (!releaseBuild && fs.existsSync(outputPath)) {
+    fs.unlinkSync(outputPath);
+  }
+
+  archiveRelease(distDir, path.resolve(outputPath));
+  console.log(`Build successful: ${outputName}`);
+}
+
+build();
