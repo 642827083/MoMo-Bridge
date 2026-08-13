@@ -98,13 +98,15 @@ test("Advance review is subordinate to study import and resets when study is dis
   assert.match(source, /需 10 级账号并开启墨墨自动同步/);
 });
 
-test("Advance review help opens to the right of its info icon", () => {
+test("Advance review help opens to the right in two bounded lines", () => {
   assert.match(styleSource, /\.option-info p\s*{[^}]*left:\s*calc\(100% \+ 6px\)/s);
   assert.match(styleSource, /\.option-info p\s*{[^}]*right:\s*auto/s);
   assert.match(styleSource, /\.option-info p\s*{[^}]*top:\s*50%/s);
   assert.match(styleSource, /\.option-info p\s*{[^}]*transform:\s*translateY\(-50%\)/s);
-  assert.match(styleSource, /\.option-info p\s*{[^}]*width:\s*320px/s);
-  assert.match(styleSource, /\.option-info p\s*{[^}]*white-space:\s*nowrap/s);
+  assert.match(styleSource, /\.option-info p\s*{[^}]*width:\s*168px/s);
+  assert.match(styleSource, /\.option-info-line\s*{[^}]*display:\s*block/s);
+  assert.match(styleSource, /\.option-info-line\s*{[^}]*white-space:\s*nowrap/s);
+  assert.equal((source.match(/className="option-info-line"/g) || []).length, 2);
 });
 
 test("Example import shows a subordinate duration notice only when selected", () => {
