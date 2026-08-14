@@ -273,10 +273,6 @@ function App() {
       setTodayItems(items);
       setReadingHistory(entries);
       setReadingSelection(chooseReadingWords(items, entries));
-      if (showMessage) {
-        setReadingMessageKind("success");
-        setReadingMessage(`已读取今日已背诵单词 ${items.length} 个`);
-      }
     } catch (error) {
       setReadingMessageKind("error");
       setReadingMessage(error.message || "读取今日已背诵单词失败");

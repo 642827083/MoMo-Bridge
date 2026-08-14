@@ -500,6 +500,10 @@ button:disabled {
   margin-top: 0;
 }
 
+.reading-actions .reading-action-button {
+  margin-top: 0;
+}
+
 .reading-regenerate-button {
   grid-column: 1 / -1;
 }
