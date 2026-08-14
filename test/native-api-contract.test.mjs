@@ -3,6 +3,8 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const source = await readFile(new URL("../src/MomoApi.js", import.meta.url), "utf8");
+const deepSeekSource = await readFile(new URL("../src/DeepSeekApi.js", import.meta.url), "utf8");
+const readingHistorySource = await readFile(new URL("../src/MomoReadingHistory.js", import.meta.url), "utf8");
 const bridgeSource = await readFile(new URL("../src/WebBridgeCommands.js", import.meta.url), "utf8");
 const selectionSource = await readFile(new URL("../src/MomoSelection.js", import.meta.url), "utf8");
 const buildSource = await readFile(new URL("../scripts/build-release.js", import.meta.url), "utf8");
@@ -136,6 +138,44 @@ test("Web bridge opens the token help page outside the plugin web view", () => {
   assert.match(bridgeSource, /https:\/\/open\.maimemo\.com\//);
   assert.match(bridgeSource, /UIApplication\.sharedApplication\(\)\.openURL\(url\)/);
   assert.match(bridgeSource, /openExternalURL,/);
+});
+
+test("DeepSeek API uses native HTTPS requests and keeps AI settings local", () => {
+  assert.match(deepSeekSource, /https:\/\/api\.deepseek\.com/);
+  assert.match(deepSeekSource, /deepseek-v4-flash/);
+  assert.match(deepSeekSource, /NSMutableURLRequest\.requestWithURL/);
+  assert.match(deepSeekSource, /request\.setHTTPMethod\(method\)/);
+  assert.match(deepSeekSource, /request\.setHTTPBody\(NSJSONSerialization\.dataWithJSONObjectOptions\(body, 0\)\)/);
+  assert.match(deepSeekSource, /Authorization/);
+  assert.match(deepSeekSource, /requestJSON\(config, "\/models", "GET"\)/);
+  assert.match(deepSeekSource, /无法连接 DeepSeek API/);
+  assert.match(bridgeSource, /deepseek-api-key/);
+  assert.match(bridgeSource, /function getAiSettings\(\)/);
+  assert.match(bridgeSource, /function saveAiSettings\(context, payload\)/);
+  assert.match(bridgeSource, /function testAiConnection\(context, payload\)/);
+  assert.match(bridgeSource, /getAiSettings,/);
+  assert.match(bridgeSource, /saveAiSettings,/);
+  assert.match(bridgeSource, /testAiConnection,/);
+});
+
+test("今日阅读读取已背诵单词并保存文章历史", () => {
+  assert.match(source, /\/memo\/study\/get_today_items/);
+  assert.match(source, /is_finished: true/);
+  assert.match(source, /limit: 1000/);
+  assert.match(source, /voc_id/);
+  assert.match(source, /voc_spelling/);
+  assert.match(deepSeekSource, /\/chat\/completions/);
+  assert.match(deepSeekSource, /articleTypeText/);
+  assert.match(deepSeekSource, /articleLengthText/);
+  assert.match(deepSeekSource, /generateArticle/);
+  assert.match(deepSeekSource, /temperature: 0\.7/);
+  assert.match(readingHistorySource, /reading-history\.json/);
+  assert.match(readingHistorySource, /recordArticle/);
+  assert.doesNotMatch(readingHistorySource, /apiKey|token/i);
+  assert.match(bridgeSource, /function getTodayFinishedWords\(context, payload\)/);
+  assert.match(bridgeSource, /function listAiReadingHistory\(\)/);
+  assert.match(bridgeSource, /function generateTodayReading\(context, payload\)/);
+  assert.match(bridgeSource, /recordArticle\(input, result\)/);
 });
 
 test("Web bridge tests a supplied Token without saving it", () => {

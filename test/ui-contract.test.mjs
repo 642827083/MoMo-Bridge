@@ -18,6 +18,45 @@ test("Panel uses the product name and keeps only the compact web subtitle", () =
   assert.doesNotMatch(webBuildSource, /MarginNote Web Template/);
 });
 
+test("AI settings page keeps connection fields separate from article options", () => {
+  assert.match(source, /const \[activePage, setActivePage\] = useState\("import"\)/);
+  assert.match(source, /AI 设置/);
+  assert.match(source, /配置用于生成今日阅读文章的 AI 服务/);
+  assert.match(source, /id="deepseek-api-key"/);
+  assert.match(source, /id="deepseek-base-url"/);
+  assert.match(source, /id="deepseek-model"/);
+  assert.match(source, /MNBridge\.send\("getAiSettings"\)/);
+  assert.match(source, /MNBridge\.send\("saveAiSettings"/);
+  assert.match(source, /MNBridge\.send\("testAiConnection"/);
+  assert.match(source, /测试连接/);
+  assert.match(source, /保存设置/);
+  assert.match(source, /API Key 仅保存在本机/);
+  assert.match(styleSource, /\.ai-settings-layout/);
+  assert.match(styleSource, /\.ai-settings-card/);
+});
+
+test("今日阅读页面只展示已背诵数据并按最多三十个单词生成", () => {
+  assert.match(source, /今日阅读/);
+  assert.match(source, /getTodayFinishedWords/);
+  assert.match(source, /listAiReadingHistory/);
+  assert.match(source, /MAX_READING_WORDS = 30/);
+  assert.match(source, /四级/);
+  assert.match(source, /六级/);
+  assert.match(source, /考研/);
+  assert.match(source, /生成中文翻译/);
+  assert.match(source, /生成今日阅读/);
+  assert.match(source, /生成下一篇/);
+  assert.match(source, /重新生成/);
+  assert.match(source, /复制英文/);
+  assert.match(source, /复制中英对照/);
+  assert.match(source, /已生成文章/);
+  assert.match(source, /待生成文章/);
+  assert.match(styleSource, /\.reading-layout/);
+  assert.match(styleSource, /\.reading-article-body/);
+  assert.match(styleSource, /\.ai-actions button\s*{[^}]*width:\s*104px/s);
+  assert.match(styleSource, /\.ai-actions \.primary-action\s*{[^}]*width:\s*104px/s);
+});
+
 test("Token help link appears above the Token input", () => {
   const labelIndex = source.indexOf('htmlFor="momo-token"');
   const linkIndex = source.indexOf("href={TOKEN_HELP_URL}");
@@ -61,7 +100,7 @@ test("Import UI exposes independent word, example, and study checkboxes on one r
   assert.match(source, /const \[addExamples, setAddExamples\] = useState\(true\)/);
   assert.match(source, /const \[addStudy, setAddStudy\] = useState\(false\)/);
   assert.match(source, /const \[advanceStudy, setAdvanceStudy\] = useState\(false\)/);
-  assert.equal((source.match(/type="checkbox"/g) || []).length, 4);
+  assert.equal((source.match(/type="checkbox"/g) || []).length, 5);
   assert.match(source, /添加单词/);
   assert.match(source, /添加例句/);
   assert.match(source, /添加背诵/);
@@ -113,6 +152,14 @@ test("Example import shows a subordinate duration notice only when selected", ()
   assert.match(source, /\{addExamples \? \(/);
   assert.match(source, /className="option-guidance example-duration-note"/);
   assert.match(source, /例句较多时会自动分批上传，所需时间通常比只添加单词更长/);
+});
+
+test("Study import explains the vocabulary limit only when selected", () => {
+  assert.match(source, /className="option-guidance study-limit-note"/);
+  assert.match(source, /添加背诵会占用墨墨账号的单词上限，达到上限后将无法继续添加/);
+  assert.match(styleSource, /\.example-duration-note\s*{[^}]*align-items:\s*center/s);
+  assert.match(styleSource, /\.study-limit-note\s*{[^}]*align-items:\s*center/s);
+  assert.match(styleSource, /\.study-advance-control\s*{[^}]*align-items:\s*center/s);
 });
 
 test("Import UI distinguishes existing words from example results", () => {

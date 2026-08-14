@@ -1,0 +1,157 @@
+var __MN_MOMO_READING_HISTORY_GLOBAL__ = (function () {
+  const SCHEMA_VERSION = 1;
+  const MAX_HISTORY_ENTRIES = 50;
+  const DATA_DIRECTORY_NAME = "MoMoImport";
+  const HISTORY_FILE_NAME = "reading-history.json";
+
+  function valueForKey(object, key) {
+    if (!object) return undefined;
+    if (object[key] !== undefined) return object[key];
+    return typeof object.objectForKey === "function" ? object.objectForKey(key) : undefined;
+  }
+
+  function arrayItems(list) {
+    if (!list) return [];
+    const rawCount = typeof list.count === "function"
+      ? list.count()
+      : list.count !== undefined ? list.count : list.length;
+    const count = Number(rawCount);
+    if (!Number.isFinite(count) || count < 1) return [];
+    const result = [];
+    for (let index = 0; index < count; index += 1) {
+      result.push(typeof list.objectAtIndex === "function" ? list.objectAtIndex(index) : list[index]);
+    }
+    return result;
+  }
+
+  function dataDirectoryPath() {
+    return `${Application.sharedInstance().documentPath}/${DATA_DIRECTORY_NAME}`;
+  }
+
+  function historyFilePath() {
+    return `${dataDirectoryPath()}/${HISTORY_FILE_NAME}`;
+  }
+
+  function ensureDataDirectory() {
+    const fileManager = NSFileManager.defaultManager();
+    const directory = dataDirectoryPath();
+    if (!fileManager.fileExistsAtPath(directory)) {
+      const created = fileManager.createDirectoryAtPathWithIntermediateDirectoriesAttributes(
+        directory,
+        true,
+        null,
+      );
+      if (!created) throw new Error("无法创建阅读历史目录");
+    }
+  }
+
+  function defaultDocument() {
+    return { schemaVersion: SCHEMA_VERSION, entries: [] };
+  }
+
+  function safeWord(value) {
+    if (!value || typeof value !== "object") return null;
+    const rawId = valueForKey(value, "id");
+    const rawSpelling = valueForKey(value, "spelling") || valueForKey(value, "voc_spelling");
+    const spelling = typeof rawSpelling === "string" ? rawSpelling.trim() : "";
+    const id = rawId === undefined || rawId === null ? "" : String(rawId);
+    return id || spelling ? { id, spelling } : null;
+  }
+
+  function safeWords(values) {
+    const result = [];
+    const seen = {};
+    for (const value of arrayItems(values)) {
+      const word = safeWord(value);
+      if (!word || !word.spelling) continue;
+      const key = word.id ? `id:${word.id}` : `word:${word.spelling.toLowerCase()}`;
+      if (seen[key]) continue;
+      seen[key] = true;
+      result.push(word);
+    }
+    return result;
+  }
+
+  function safeEntry(value) {
+    if (!value || typeof value !== "object") return null;
+    const article = String(valueForKey(value, "article") || "").trim();
+    const words = safeWords(valueForKey(value, "words"));
+    if (!article || words.length === 0) return null;
+    return {
+      id: String(valueForKey(value, "id") || ""),
+      createdAt: String(valueForKey(value, "createdAt") || ""),
+      articleType: String(valueForKey(value, "articleType") || "cet4"),
+      length: String(valueForKey(value, "length") || "medium"),
+      includeTranslation: valueForKey(value, "includeTranslation") !== false,
+      words,
+      article,
+      translation: String(valueForKey(value, "translation") || "").trim(),
+    };
+  }
+
+  function readDocument() {
+    const path = historyFilePath();
+    const fileManager = NSFileManager.defaultManager();
+    if (!fileManager.fileExistsAtPath(path)) return defaultDocument();
+    try {
+      const data = NSData.dataWithContentsOfFile(path);
+      if (!data) return defaultDocument();
+      const parsed = NSJSONSerialization.JSONObjectWithDataOptions(data, 0);
+      const entries = arrayItems(valueForKey(parsed, "entries"));
+      return {
+        schemaVersion: SCHEMA_VERSION,
+        entries: entries.map(safeEntry).filter(Boolean).slice(0, MAX_HISTORY_ENTRIES),
+      };
+    } catch (ignored) {
+      return defaultDocument();
+    }
+  }
+
+  function writeDocument(document) {
+    ensureDataDirectory();
+    const safeDocument = {
+      schemaVersion: SCHEMA_VERSION,
+      entries: Array.isArray(document && document.entries)
+        ? document.entries.slice(0, MAX_HISTORY_ENTRIES)
+        : [],
+    };
+    const data = NSJSONSerialization.dataWithJSONObjectOptions(safeDocument, 0);
+    if (!data || !data.writeToFileAtomically(historyFilePath(), true)) {
+      throw new Error("无法保存阅读历史");
+    }
+  }
+
+  function uniqueId() {
+    return `${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+  }
+
+  function recordArticle(payload, result) {
+    const source = result && typeof result === "object" ? result : {};
+    const words = safeWords(valueForKey(source, "words") || valueForKey(payload, "words"));
+    const entry = safeEntry({
+      id: uniqueId(),
+      createdAt: new Date().toISOString(),
+      articleType: valueForKey(source, "articleType") || valueForKey(payload, "articleType"),
+      length: valueForKey(source, "length") || valueForKey(payload, "length"),
+      includeTranslation: valueForKey(source, "includeTranslation") !== false,
+      words,
+      article: valueForKey(source, "article"),
+      translation: valueForKey(source, "translation"),
+    });
+    if (!entry) throw new Error("文章内容无效，无法保存阅读历史");
+    const document = readDocument();
+    document.entries.unshift(entry);
+    document.entries = document.entries.slice(0, MAX_HISTORY_ENTRIES);
+    writeDocument(document);
+    return entry;
+  }
+
+  function listHistory() {
+    return readDocument().entries;
+  }
+
+  return {
+    listHistory,
+    recordArticle,
+  };
+})();

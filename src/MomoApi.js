@@ -1255,8 +1255,46 @@ var __MN_MOMO_API_GLOBAL__ = (function () {
     });
   }
 
+  function studyItems(payload) {
+    if (Array.isArray(payload)) return payload;
+    const directItems = valueForKey(payload, "items");
+    if (directItems) return arrayItems(directItems);
+    const directTodayItems = valueForKey(payload, "today_items");
+    if (directTodayItems) return arrayItems(directTodayItems);
+    const data = valueForKey(payload, "data");
+    const nestedItems = valueForKey(data, "items") || valueForKey(data, "today_items");
+    if (nestedItems) return arrayItems(nestedItems);
+    if (Array.isArray(data) || (data && typeof data.count === "function")) return arrayItems(data);
+    return [];
+  }
+
+  function todayFinishedItems(token) {
+    return requestJSON(token, "/memo/study/get_today_items", "POST", {
+      is_finished: true,
+      limit: 1000,
+    }).then(function (payload) {
+      const seen = {};
+      const result = [];
+      for (const item of studyItems(payload)) {
+        const finished = valueForKey(item, "is_finished");
+        if (finished !== undefined && finished !== true && String(finished) !== "1") continue;
+        const rawId = valueForKey(item, "voc_id");
+        const rawSpelling = valueForKey(item, "voc_spelling") || valueForKey(item, "spelling");
+        const spelling = typeof rawSpelling === "string" ? rawSpelling.trim() : "";
+        const id = rawId === undefined || rawId === null ? "" : String(rawId);
+        if (!id && !spelling) continue;
+        const key = id ? `id:${id}` : `word:${spelling.toLowerCase()}`;
+        if (seen[key]) continue;
+        seen[key] = true;
+        result.push({ id, spelling });
+      }
+      return result;
+    });
+  }
+
   return {
     importWords,
     listNotepads,
+    todayFinishedItems,
   };
 })();

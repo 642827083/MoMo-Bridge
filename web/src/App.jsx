@@ -10,6 +10,47 @@ import MNBridge from "./lib/mnBridge";
 
 const TOKEN_HELP_URL = "https://open.maimemo.com/#/";
 const MAX_EXAMPLES_PER_IMPORT = 10;
+const MAX_READING_WORDS = 30;
+
+const READING_ARTICLE_TYPES = [
+  { value: "cet4", label: "四级" },
+  { value: "cet6", label: "六级" },
+  { value: "postgraduate1", label: "考研（英语一）" },
+  { value: "postgraduate2", label: "考研（英语二）" },
+];
+
+const READING_LENGTHS = [
+  { value: "short", label: "短文" },
+  { value: "medium", label: "中等" },
+  { value: "long", label: "长文" },
+];
+
+function readingWordKeys(word) {
+  if (!word || typeof word !== "object") return [];
+  const keys = [];
+  const id = word.id === undefined || word.id === null ? "" : String(word.id).trim();
+  const spelling = typeof word.spelling === "string" ? word.spelling.trim().toLowerCase() : "";
+  if (id) keys.push(`id:${id}`);
+  if (spelling) keys.push(`word:${spelling}`);
+  return keys;
+}
+
+function generatedReadingKeys(entries) {
+  const keys = new Set();
+  for (const entry of Array.isArray(entries) ? entries : []) {
+    for (const word of Array.isArray(entry?.words) ? entry.words : []) {
+      for (const key of readingWordKeys(word)) keys.add(key);
+    }
+  }
+  return keys;
+}
+
+function chooseReadingWords(items, entries) {
+  const generated = generatedReadingKeys(entries);
+  return (Array.isArray(items) ? items : [])
+    .filter((word) => readingWordKeys(word).every((key) => !generated.has(key)))
+    .slice(0, MAX_READING_WORDS);
+}
 
 function historyOptions(entry) {
   return [
@@ -23,6 +64,13 @@ function formatHistoryTime(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "时间未知";
   return date.toLocaleString("zh-CN", { hour12: false });
+}
+
+function readingArticleTypeLabel(value) {
+  const current = READING_ARTICLE_TYPES.find((item) => item.value === value);
+  if (current) return current.label;
+  if (value === "postgraduate") return "考研（旧记录）";
+  return "英语阅读";
 }
 
 function formatRemainingTime(seconds) {
@@ -52,6 +100,26 @@ function App() {
   const [retryingHistoryId, setRetryingHistoryId] = useState("");
   const [connectionTesting, setConnectionTesting] = useState(false);
   const [connectionMessage, setConnectionMessage] = useState("");
+  const [activePage, setActivePage] = useState("import");
+  const [aiApiKey, setAiApiKey] = useState("");
+  const [aiBaseUrl, setAiBaseUrl] = useState("https://api.deepseek.com");
+  const [aiModel, setAiModel] = useState("deepseek-v4-flash");
+  const [showAiKey, setShowAiKey] = useState(false);
+  const [aiSaving, setAiSaving] = useState(false);
+  const [aiTesting, setAiTesting] = useState(false);
+  const [aiMessage, setAiMessage] = useState("");
+  const [aiMessageKind, setAiMessageKind] = useState("info");
+  const [todayItems, setTodayItems] = useState([]);
+  const [readingHistory, setReadingHistory] = useState([]);
+  const [readingSelection, setReadingSelection] = useState([]);
+  const [readingArticleType, setReadingArticleType] = useState("cet4");
+  const [readingLength, setReadingLength] = useState("medium");
+  const [readingTranslation, setReadingTranslation] = useState(true);
+  const [currentArticle, setCurrentArticle] = useState(null);
+  const [readingLoading, setReadingLoading] = useState(false);
+  const [readingBusy, setReadingBusy] = useState(false);
+  const [readingMessage, setReadingMessage] = useState("");
+  const [readingMessageKind, setReadingMessageKind] = useState("info");
   const [estimateDeadline, setEstimateDeadline] = useState(0);
   const [progressClock, setProgressClock] = useState(Date.now());
 
@@ -73,6 +141,12 @@ function App() {
     () => notepads.find((notepad) => notepad.id === bookId),
     [bookId, notepads],
   );
+  const generatedTodayKeys = useMemo(() => generatedReadingKeys(readingHistory), [readingHistory]);
+  const generatedTodayCount = useMemo(
+    () => todayItems.filter((word) => readingWordKeys(word).some((key) => generatedTodayKeys.has(key))).length,
+    [generatedTodayKeys, todayItems],
+  );
+  const pendingTodayCount = Math.max(0, todayItems.length - generatedTodayCount);
 
   useEffect(() => {
     if (!busy || !estimateDeadline) return undefined;
@@ -107,8 +181,19 @@ function App() {
         setBookId(settings.bookId || "");
       })
       .catch(() => setMessage("无法读取本机设置"));
+    MNBridge.send("getAiSettings")
+      .then((settings) => {
+        setAiApiKey(settings.apiKey || "");
+        setAiBaseUrl(settings.baseUrl || "https://api.deepseek.com");
+        setAiModel(settings.model || "deepseek-v4-flash");
+      })
+      .catch(() => setAiMessage("无法读取 AI 配置"));
     loadImportHistory(false);
   }, []);
+
+  useEffect(() => {
+    if (activePage === "reading") loadTodayReading(false);
+  }, [activePage]);
 
   async function loadImportHistory(showMessage = true) {
     try {
@@ -125,6 +210,157 @@ function App() {
 
   async function saveSettings(nextBookId = bookId) {
     await MNBridge.send("saveSettings", { token, bookId: nextBookId });
+  }
+
+  async function saveAiConfiguration() {
+    try {
+      setAiSaving(true);
+      setAiMessage("");
+      await MNBridge.send("saveAiSettings", {
+        apiKey: aiApiKey,
+        baseUrl: aiBaseUrl,
+        model: aiModel,
+      });
+      setAiMessageKind("success");
+      setAiMessage("AI 配置已保存");
+    } catch (error) {
+      setAiMessageKind("error");
+      setAiMessage(error.message || "保存 AI 配置失败");
+    } finally {
+      setAiSaving(false);
+    }
+  }
+
+  async function testAiConnection() {
+    if (!aiApiKey.trim()) {
+      setAiMessageKind("error");
+      setAiMessage("请先填写 DeepSeek API Key");
+      return;
+    }
+    try {
+      setAiTesting(true);
+      setAiMessage("");
+      const payload = await MNBridge.send("testAiConnection", {
+        apiKey: aiApiKey,
+        baseUrl: aiBaseUrl,
+        model: aiModel,
+      });
+      setAiMessageKind(payload.modelAvailable === false ? "warning" : "success");
+      setAiMessage(payload.message || "DeepSeek API 连接成功");
+    } catch (error) {
+      setAiMessageKind("error");
+      setAiMessage(error.message || "测试 DeepSeek 连接失败");
+    } finally {
+      setAiTesting(false);
+    }
+  }
+
+  async function loadTodayReading(showMessage = true) {
+    if (!token.trim()) {
+      setReadingMessageKind("error");
+      setReadingMessage("请先在墨墨导入页面填写 Token");
+      return;
+    }
+    try {
+      setReadingLoading(true);
+      if (showMessage) setReadingMessage("");
+      const [todayPayload, historyPayload] = await Promise.all([
+        MNBridge.send("getTodayFinishedWords", { token }),
+        MNBridge.send("listAiReadingHistory"),
+      ]);
+      const items = Array.isArray(todayPayload.items) ? todayPayload.items : [];
+      const entries = Array.isArray(historyPayload.entries) ? historyPayload.entries : [];
+      setTodayItems(items);
+      setReadingHistory(entries);
+      setReadingSelection(chooseReadingWords(items, entries));
+      if (showMessage) {
+        setReadingMessageKind("success");
+        setReadingMessage(`已读取今日已背诵单词 ${items.length} 个`);
+      }
+    } catch (error) {
+      setReadingMessageKind("error");
+      setReadingMessage(error.message || "读取今日已背诵单词失败");
+    } finally {
+      setReadingLoading(false);
+    }
+  }
+
+  async function requestReadingArticle(words) {
+    const selectedWords = Array.isArray(words) ? words : [];
+    if (selectedWords.length === 0) {
+      setReadingMessageKind("warning");
+      setReadingMessage("没有待生成文章的单词");
+      return null;
+    }
+    if (!aiApiKey.trim()) {
+      setReadingMessageKind("error");
+      setReadingMessage("请先在 AI 设置页面填写 DeepSeek API Key");
+      setActivePage("ai");
+      return null;
+    }
+    try {
+      setReadingBusy(true);
+      setReadingMessage("");
+      const payload = await MNBridge.send("generateTodayReading", {
+        settings: {
+          apiKey: aiApiKey,
+          baseUrl: aiBaseUrl,
+          model: aiModel,
+        },
+        words: selectedWords,
+        articleType: readingArticleType,
+        length: readingLength,
+        includeTranslation: readingTranslation,
+      });
+      setCurrentArticle(payload);
+      if (payload.historyEntry) {
+        setReadingHistory((current) => [payload.historyEntry, ...current]);
+      }
+      setReadingSelection([]);
+      setReadingMessageKind("success");
+      setReadingMessage(`文章生成成功，本次使用 ${selectedWords.length} 个单词`);
+      return payload;
+    } catch (error) {
+      setReadingMessageKind("error");
+      setReadingMessage(error.message || "生成今日阅读文章失败");
+      return null;
+    } finally {
+      setReadingBusy(false);
+    }
+  }
+
+  async function generateSelectedReading() {
+    let selectedWords = readingSelection;
+    if (selectedWords.length === 0) {
+      selectedWords = chooseReadingWords(todayItems, readingHistory);
+      setReadingSelection(selectedWords);
+    }
+    await requestReadingArticle(selectedWords);
+  }
+
+  async function generateNextReading() {
+    const nextWords = chooseReadingWords(todayItems, readingHistory);
+    setReadingSelection(nextWords);
+    await requestReadingArticle(nextWords);
+  }
+
+  async function regenerateReading() {
+    await requestReadingArticle(currentArticle && currentArticle.words);
+  }
+
+  async function copyReadingContent(includeTranslation) {
+    if (!currentArticle?.article) return;
+    const content = includeTranslation && currentArticle.translation
+      ? `${currentArticle.article}\n\n${currentArticle.translation}`
+      : currentArticle.article;
+    try {
+      await navigator.clipboard.writeText(content);
+      setReadingMessageKind("success");
+      setReadingMessage(includeTranslation ? "中英对照已复制" : "英文文章已复制");
+    } catch (error) {
+      setReadingMessageKind("error");
+      setReadingMessage("无法复制文章");
+    }
   }
 
   async function testConnection() {
@@ -302,12 +538,45 @@ function App() {
   return (
     <div className="app-shell">
       <header className="app-heading">
-        <p className="eyebrow">MarginNote → 墨墨背单词</p>
+        <div>
+          <h1>MoMo Import</h1>
+          <p className="eyebrow">MarginNote → 墨墨背单词</p>
+        </div>
         <span className="status-dot" aria-label={busy ? "正在处理" : "就绪"} />
       </header>
 
+      <nav className="page-tabs" aria-label="功能页面">
+        <button
+          className={`page-tab${activePage === "import" ? " is-active" : ""}`}
+          type="button"
+          onClick={() => setActivePage("import")}
+        >
+          墨墨导入
+        </button>
+        <button
+          className={`page-tab${activePage === "reading" ? " is-active" : ""}`}
+          type="button"
+          onClick={() => setActivePage("reading")}
+        >
+          今日阅读
+        </button>
+        <button
+          className={`page-tab${activePage === "ai" ? " is-active" : ""}`}
+          type="button"
+          onClick={() => setActivePage("ai")}
+        >
+          AI 设置
+        </button>
+      </nav>
+
+      {activePage === "import" ? (
       <main className="import-layout">
         <section className="settings-column" aria-label="导入设置">
+          <div className="page-intro import-page-intro">
+            <p className="eyebrow">墨墨词汇管理</p>
+            <h2>墨墨导入</h2>
+            <p>将脑图中选中的单词、例句和背诵计划同步到墨墨。</p>
+          </div>
           <label className="field-label" htmlFor="momo-token">墨墨 Token</label>
           <a
             className="token-help"
@@ -384,6 +653,11 @@ function App() {
               {addExamples ? (
                 <p className="option-guidance example-duration-note">
                   例句较多时会自动分批上传，所需时间通常比只添加单词更长。
+                </p>
+              ) : null}
+              {addStudy ? (
+                <p className="option-guidance study-limit-note">
+                  添加背诵会占用墨墨账号的单词上限，达到上限后将无法继续添加。
                 </p>
               ) : null}
               {addStudy ? (
@@ -697,6 +971,218 @@ function App() {
           </section>
         </section>
       </main>
+      ) : activePage === "reading" ? (
+        <main className="reading-layout" aria-label="今日阅读">
+          <section className="reading-card">
+            <div className="reading-heading">
+              <div>
+                <p className="eyebrow">墨墨学习数据</p>
+                <h2>今日阅读</h2>
+                <p>根据今日已背诵单词生成一篇适合当前词汇量的英语阅读文章。</p>
+              </div>
+            </div>
+
+            <div className="reading-stat-grid">
+              <div><strong>{todayItems.length}</strong><span>今日已背诵</span></div>
+              <div><strong>{generatedTodayCount}</strong><span>已生成文章</span></div>
+              <div><strong>{pendingTodayCount}</strong><span>待生成文章</span></div>
+            </div>
+
+            <div className="reading-controls">
+              <div className="reading-control">
+                <label className="field-label" htmlFor="reading-article-type">文章类型</label>
+                <select id="reading-article-type" value={readingArticleType} onChange={(event) => setReadingArticleType(event.target.value)}>
+                  {READING_ARTICLE_TYPES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                </select>
+              </div>
+              <div className="reading-control">
+                <label className="field-label" htmlFor="reading-length">文章长度</label>
+                <select id="reading-length" value={readingLength} onChange={(event) => setReadingLength(event.target.value)}>
+                  {READING_LENGTHS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                </select>
+              </div>
+              <label className="reading-translation-option">
+                <input
+                  type="checkbox"
+                  checked={readingTranslation}
+                  onChange={(event) => setReadingTranslation(event.target.checked)}
+                />
+                <span>生成中文翻译</span>
+              </label>
+            </div>
+
+            <div className="reading-selection-panel">
+              <div className="reading-selection-heading">
+                <div>
+                  <p className="eyebrow">本次使用</p>
+                  <strong>{readingSelection.length} 个单词</strong>
+                </div>
+                <span>每次最多自动选择 {MAX_READING_WORDS} 个未生成单词</span>
+              </div>
+              {readingSelection.length ? (
+                <details className="reading-word-details">
+                  <summary>查看本次使用的单词</summary>
+                  <div className="reading-word-list">
+                    {readingSelection.map((word) => <span key={`${word.id}-${word.spelling}`}>{word.spelling}</span>)}
+                  </div>
+                </details>
+              ) : (
+                <p className="reading-empty-note">
+                  {todayItems.length === 0 ? "请先重新读取今日已背诵单词" : "今日已背诵单词均已生成文章"}
+                </p>
+              )}
+            </div>
+
+            <div className="reading-actions">
+              <button
+                className="secondary-button reading-action-button"
+                type="button"
+                disabled={readingLoading || readingBusy}
+                onClick={() => loadTodayReading(true)}
+              >
+                {readingLoading ? "读取中…" : "重新读取"}
+              </button>
+              <button
+                className="primary-action reading-action-button"
+                type="button"
+                disabled={readingBusy || readingLoading || readingSelection.length === 0}
+                onClick={currentArticle ? generateNextReading : generateSelectedReading}
+              >
+                {readingBusy ? "生成中…" : currentArticle ? "生成下一篇" : "生成今日阅读"}
+              </button>
+              {currentArticle ? (
+                <button className="secondary-button reading-action-button reading-regenerate-button" type="button" disabled={readingBusy} onClick={regenerateReading}>
+                  重新生成
+                </button>
+              ) : null}
+            </div>
+            {readingMessage ? <p className={`reading-message is-${readingMessageKind}`} role="status">{readingMessage}</p> : null}
+
+            {currentArticle ? (
+              <article className="reading-article">
+                <div className="reading-article-heading">
+                  <div>
+                    <p className="eyebrow">本次阅读文章</p>
+                    <h3>{readingArticleTypeLabel(currentArticle.articleType)}</h3>
+                  </div>
+                  <span>{currentArticle.words?.length || 0} 个单词</span>
+                </div>
+                <div className="reading-article-body">{currentArticle.article}</div>
+                {currentArticle.translation ? (
+                  <div className="reading-translation"><strong>中文翻译</strong><p>{currentArticle.translation}</p></div>
+                ) : null}
+                <div className="reading-copy-actions">
+                  <button className="secondary-button" type="button" onClick={() => copyReadingContent(false)}>复制英文</button>
+                  {currentArticle.translation ? (
+                    <button className="secondary-button" type="button" onClick={() => copyReadingContent(true)}>复制中英对照</button>
+                  ) : null}
+                </div>
+              </article>
+            ) : null}
+          </section>
+
+          <section className="reading-history-card" aria-label="阅读历史">
+            <div className="history-heading">
+              <div>
+                <p className="eyebrow">本机记录</p>
+                <h3>阅读历史</h3>
+              </div>
+              <span className="count-badge">{readingHistory.length} 篇</span>
+            </div>
+            <p className="history-privacy">只保存文章、日期和单词 ID，不保存墨墨 Token 或 DeepSeek API Key。</p>
+            {readingHistory.length ? (
+              <div className="reading-history-list">
+                {readingHistory.slice(0, 8).map((entry) => (
+                  <details className="reading-history-item" key={entry.id}>
+                    <summary>
+                      <span>
+                        <strong>{readingArticleTypeLabel(entry.articleType)}</strong>
+                        <small>{formatHistoryTime(entry.createdAt)} · {entry.words?.length || 0} 个单词</small>
+                      </span>
+                      <span className="history-status">已生成</span>
+                    </summary>
+                    <div className="reading-history-content">
+                      <p>{entry.article}</p>
+                      {entry.translation ? <small>{entry.translation}</small> : null}
+                    </div>
+                  </details>
+                ))}
+              </div>
+            ) : (
+              <div className="history-empty">生成文章后，这里会保存阅读历史。</div>
+            )}
+          </section>
+        </main>
+      ) : (
+        <main className="ai-settings-layout" aria-label="AI 设置">
+          <section className="ai-settings-card">
+            <div className="ai-settings-heading">
+              <p className="eyebrow">AI 服务配置</p>
+              <h2>AI 设置</h2>
+              <p>配置用于生成今日阅读文章的 AI 服务。</p>
+            </div>
+
+            <div className="ai-settings-form">
+              <div className="ai-field">
+                <label className="field-label" htmlFor="deepseek-api-key">DeepSeek API Key</label>
+                <div className="secret-input-row">
+                  <input
+                    id="deepseek-api-key"
+                    type={showAiKey ? "text" : "password"}
+                    value={aiApiKey}
+                    autoComplete="off"
+                    placeholder="粘贴 DeepSeek API Key"
+                    onChange={(event) => setAiApiKey(event.target.value)}
+                  />
+                  <button
+                    className="field-action"
+                    type="button"
+                    aria-label={showAiKey ? "隐藏 API Key" : "显示 API Key"}
+                    onClick={() => setShowAiKey((current) => !current)}
+                  >
+                    {showAiKey ? "隐藏" : "显示"}
+                  </button>
+                </div>
+              </div>
+
+              <div className="ai-field">
+                <label className="field-label" htmlFor="deepseek-base-url">API 地址</label>
+                <input
+                  id="deepseek-base-url"
+                  type="url"
+                  value={aiBaseUrl}
+                  placeholder="https://api.deepseek.com"
+                  onChange={(event) => setAiBaseUrl(event.target.value)}
+                />
+              </div>
+
+              <div className="ai-field">
+                <label className="field-label" htmlFor="deepseek-model">模型</label>
+                <input
+                  id="deepseek-model"
+                  value={aiModel}
+                  placeholder="deepseek-v4-flash"
+                  onChange={(event) => setAiModel(event.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="ai-actions">
+              <button className="secondary-button" type="button" disabled={aiTesting || aiSaving} onClick={testAiConnection}>
+                {aiTesting ? "测试中…" : "测试连接"}
+              </button>
+              <button className="primary-action" type="button" disabled={aiSaving || aiTesting} onClick={saveAiConfiguration}>
+                {aiSaving ? "保存中…" : "保存设置"}
+              </button>
+            </div>
+
+            {aiMessage ? (
+              <p className={`ai-message is-${aiMessageKind}`} role="status">{aiMessage}</p>
+            ) : null}
+            <p className="ai-privacy-note">API Key 仅保存在本机，用于生成今日阅读文章，不会发送给墨墨或写入导入历史。</p>
+          </section>
+        </main>
+      )}
     </div>
   );
 }

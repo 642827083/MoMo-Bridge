@@ -1,6 +1,9 @@
 var __MN_WEB_BRIDGE_COMMANDS_GLOBAL__ = (function () {
   const TOKEN_KEY = "cn.marginnote.momo-vocabulary-import.token";
   const BOOK_ID_KEY = "cn.marginnote.momo-vocabulary-import.book-id";
+  const AI_API_KEY_KEY = "cn.marginnote.momo-vocabulary-import.deepseek-api-key";
+  const AI_BASE_URL_KEY = "cn.marginnote.momo-vocabulary-import.deepseek-base-url";
+  const AI_MODEL_KEY = "cn.marginnote.momo-vocabulary-import.deepseek-model";
 
   function toBridgePayload(value) {
     return value === undefined ? null : value;
@@ -63,6 +66,65 @@ var __MN_WEB_BRIDGE_COMMANDS_GLOBAL__ = (function () {
     defaults.setObjectForKey(token, TOKEN_KEY);
     defaults.setObjectForKey(bookId, BOOK_ID_KEY);
     return { saved: true, tokenConfigured: !!token, bookId };
+  }
+
+  function savedAiSettings() {
+    const defaults = NSUserDefaults.standardUserDefaults();
+    return {
+      apiKey: defaults.objectForKey(AI_API_KEY_KEY) || "",
+      baseUrl: defaults.objectForKey(AI_BASE_URL_KEY) || __MN_DEEPSEEK_API_GLOBAL__.DEFAULT_BASE_URL,
+      model: defaults.objectForKey(AI_MODEL_KEY) || __MN_DEEPSEEK_API_GLOBAL__.DEFAULT_MODEL,
+    };
+  }
+
+  function getAiSettings() {
+    return savedAiSettings();
+  }
+
+  function saveAiSettings(context, payload) {
+    const settings = __MN_DEEPSEEK_API_GLOBAL__.normalizeSettings(payload || {});
+    const defaults = NSUserDefaults.standardUserDefaults();
+    defaults.setObjectForKey(settings.apiKey, AI_API_KEY_KEY);
+    defaults.setObjectForKey(settings.baseUrl, AI_BASE_URL_KEY);
+    defaults.setObjectForKey(settings.model, AI_MODEL_KEY);
+    return {
+      saved: true,
+      apiKeyConfigured: !!settings.apiKey,
+      baseUrl: settings.baseUrl,
+      model: settings.model,
+    };
+  }
+
+  function testAiConnection(context, payload) {
+    return __MN_DEEPSEEK_API_GLOBAL__.testConnection(payload || {});
+  }
+
+  function getTodayFinishedWords(context, payload) {
+    const token = payload && typeof payload.token === "string" && payload.token.trim()
+      ? payload.token.trim()
+      : savedToken();
+    return __MN_MOMO_API_GLOBAL__.todayFinishedItems(token).then(function (items) {
+      return { items };
+    });
+  }
+
+  function listAiReadingHistory() {
+    return { entries: __MN_MOMO_READING_HISTORY_GLOBAL__.listHistory() };
+  }
+
+  function generateTodayReading(context, payload) {
+    const input = payload && typeof payload === "object" ? payload : {};
+    const settings = input.settings && typeof input.settings === "object"
+      ? input.settings
+      : savedAiSettings();
+    return __MN_DEEPSEEK_API_GLOBAL__.generateArticle(
+      settings,
+      input.words,
+      input,
+    ).then(function (result) {
+      const historyEntry = __MN_MOMO_READING_HISTORY_GLOBAL__.recordArticle(input, result);
+      return Object.assign({}, result, { historyEntry });
+    });
   }
 
   function getSelectedTitles(context) {
@@ -268,6 +330,12 @@ var __MN_WEB_BRIDGE_COMMANDS_GLOBAL__ = (function () {
     openExternalURL,
     getSettings,
     saveSettings,
+    getAiSettings,
+    saveAiSettings,
+    testAiConnection,
+    getTodayFinishedWords,
+    listAiReadingHistory,
+    generateTodayReading,
     getSelectedTitles,
     getSelectedCards,
     listMomoNotepads,
