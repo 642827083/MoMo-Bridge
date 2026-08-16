@@ -145,9 +145,13 @@ test("DeepSeek API uses native HTTPS requests and keeps AI settings local", () =
   assert.match(deepSeekSource, /deepseek-v4-flash/);
   assert.match(deepSeekSource, /NSMutableURLRequest\.requestWithURL/);
   assert.match(deepSeekSource, /request\.setHTTPMethod\(method\)/);
+  assert.match(deepSeekSource, /DEEPSEEK_REQUEST_TIMEOUT_SECONDS = 90/);
+  assert.match(deepSeekSource, /request\.setTimeoutInterval\(DEEPSEEK_REQUEST_TIMEOUT_SECONDS\)/);
   assert.match(deepSeekSource, /request\.setHTTPBody\(NSJSONSerialization\.dataWithJSONObjectOptions\(body, 0\)\)/);
   assert.match(deepSeekSource, /Authorization/);
-  assert.match(deepSeekSource, /requestJSON\(config, "\/models", "GET"\)/);
+  assert.match(deepSeekSource, /requestJSON\(config, "\/chat\/completions", "POST"/);
+  assert.match(deepSeekSource, /请只回复 OK/);
+  assert.match(deepSeekSource, /max_tokens: 1/);
   assert.match(deepSeekSource, /无法连接 DeepSeek API/);
   assert.match(bridgeSource, /deepseek-api-key/);
   assert.match(bridgeSource, /function getAiSettings\(\)/);
@@ -178,13 +182,9 @@ test("今日阅读读取已背诵单词并保存文章历史", () => {
   assert.match(bridgeSource, /recordArticle\(input, result\)/);
 });
 
-test("Web bridge tests a supplied Token without saving it", () => {
-  assert.match(bridgeSource, /function testMomoConnection\(context, payload\)/);
-  assert.match(bridgeSource, /payload\.token/);
-  assert.match(bridgeSource, /listNotepads\(token\)/);
-  assert.match(bridgeSource, /tokenValid/);
-  assert.match(bridgeSource, /canReadNotepads/);
-  assert.match(bridgeSource, /testMomoConnection,/);
+test("Web bridge does not expose a standalone Momo connection test", () => {
+  assert.doesNotMatch(bridgeSource, /function testMomoConnection\(context, payload\)/);
+  assert.doesNotMatch(bridgeSource, /testMomoConnection,/);
 });
 
 test("Web bridge supports independent word and example selections and legacy modes", () => {

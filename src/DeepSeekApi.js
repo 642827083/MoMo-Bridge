@@ -1,6 +1,7 @@
 var __MN_DEEPSEEK_API_GLOBAL__ = (function () {
   const DEFAULT_BASE_URL = "https://api.deepseek.com";
   const DEFAULT_MODEL = "deepseek-v4-flash";
+  const DEEPSEEK_REQUEST_TIMEOUT_SECONDS = 90;
 
   function valueForKey(object, key) {
     if (!object) return undefined;
@@ -96,7 +97,7 @@ var __MN_DEEPSEEK_API_GLOBAL__ = (function () {
 
       const request = NSMutableURLRequest.requestWithURL(url);
       request.setHTTPMethod(method);
-      request.setTimeoutInterval(15);
+      request.setTimeoutInterval(DEEPSEEK_REQUEST_TIMEOUT_SECONDS);
       request.setAllHTTPHeaderFields({
         "Authorization": `Bearer ${config.apiKey}`,
         "Content-Type": "application/json",
@@ -153,17 +154,17 @@ var __MN_DEEPSEEK_API_GLOBAL__ = (function () {
     const config = normalizeSettings(settings);
     if (!config.apiKey) return Promise.reject(new Error("请先填写 DeepSeek API Key"));
 
-    return requestJSON(config, "/models", "GET").then(function (payload) {
-      const models = arrayItems(valueForKey(payload, "data"));
-      const modelAvailable = models.length === 0 || models.some(function (item) {
-        return String(valueForKey(item, "id") || "") === config.model;
-      });
+    return requestJSON(config, "/chat/completions", "POST", {
+      model: config.model,
+      messages: [{ role: "user", content: "请只回复 OK" }],
+      max_tokens: 1,
+      temperature: 0,
+      stream: false,
+    }).then(function () {
       return {
         connected: true,
-        modelAvailable,
-        message: modelAvailable
-          ? "连接成功，DeepSeek API 可以正常访问"
-          : "连接成功，但当前模型未出现在模型列表中",
+        modelAvailable: true,
+        message: "连接成功，当前模型可以生成文章",
       };
     });
   }

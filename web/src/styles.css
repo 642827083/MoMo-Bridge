@@ -504,10 +504,6 @@ button:disabled {
   margin-top: 0;
 }
 
-.reading-regenerate-button {
-  grid-column: 1 / -1;
-}
-
 .reading-message {
   margin: 10px 0 0;
   font-size: 12px;
@@ -536,9 +532,23 @@ button:disabled {
   font-size: 17px;
 }
 
-.reading-article-heading > span {
+.reading-article-heading-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.reading-article-heading-actions > span {
   color: var(--muted);
   font-size: 11px;
+}
+
+.reading-article-heading-actions .reading-action-button {
+  width: auto;
+  min-height: 32px;
+  padding: 7px 12px;
 }
 
 .reading-article-body {

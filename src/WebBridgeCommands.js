@@ -156,37 +156,6 @@ var __MN_WEB_BRIDGE_COMMANDS_GLOBAL__ = (function () {
     });
   }
 
-  function testMomoConnection(context, payload) {
-    const token = payload && typeof payload.token === "string" ? payload.token.trim() : "";
-    if (!token) {
-      return Promise.resolve({
-        tokenValid: false,
-        canReadNotepads: false,
-        notepadCount: 0,
-        message: "请先填写墨墨开放 API Token",
-      });
-    }
-
-    return __MN_MOMO_API_GLOBAL__.listNotepads(token).then(function (notepads) {
-      return {
-        tokenValid: true,
-        canReadNotepads: true,
-        notepadCount: Array.isArray(notepads) ? notepads.length : 0,
-        message: `连接成功，已读取 ${Array.isArray(notepads) ? notepads.length : 0} 本云词本`,
-      };
-    }).catch(function (error) {
-      const reason = error && error.message ? error.message : "无法读取墨墨云词本";
-      const status = Number(error && error.statusCode);
-      const tokenInvalid = status === 401 || status === 403 || /unauthorized|invalid token|token|未授权|无效/i.test(reason);
-      return {
-        tokenValid: !tokenInvalid,
-        canReadNotepads: false,
-        notepadCount: 0,
-        message: tokenInvalid ? `Token 无效或已过期：${reason}` : reason,
-      };
-    });
-  }
-
   function importOptions(payload) {
     const mode = payload && typeof payload.mode === "string" ? payload.mode : "both";
     const hasBooleanOptions = payload && (
@@ -339,7 +308,6 @@ var __MN_WEB_BRIDGE_COMMANDS_GLOBAL__ = (function () {
     getSelectedTitles,
     getSelectedCards,
     listMomoNotepads,
-    testMomoConnection,
     importMomoWords,
     listImportHistory,
     retryImportHistory,

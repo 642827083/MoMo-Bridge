@@ -21,7 +21,7 @@ test("Panel uses the product name and keeps only the compact web subtitle", () =
 test("AI settings page keeps connection fields separate from article options", () => {
   assert.match(source, /const \[activePage, setActivePage\] = useState\("import"\)/);
   assert.match(source, /AI 设置/);
-  assert.match(source, /配置用于生成今日阅读文章的 AI 服务/);
+  assert.match(source, /配置用于生成 AI 阅读文章的 AI 服务/);
   assert.match(source, /id="deepseek-api-key"/);
   assert.match(source, /id="deepseek-base-url"/);
   assert.match(source, /id="deepseek-model"/);
@@ -35,8 +35,13 @@ test("AI settings page keeps connection fields separate from article options", (
   assert.match(styleSource, /\.ai-settings-card/);
 });
 
-test("今日阅读页面只展示已背诵数据并按最多三十个单词生成", () => {
-  assert.match(source, /今日阅读/);
+test("AI 阅读页面只展示已背诵数据并按最多三十个单词生成", () => {
+  assert.match(source, /AI 阅读/);
+  assert.match(source, /function localDayKey\(value\)/);
+  assert.match(source, /function isCurrentLocalDay\(value\)/);
+  assert.match(source, /function generatedReadingKeys\(entries, todayOnly = false\)/);
+  assert.match(source, /todayOnly && !isCurrentLocalDay\(entry\?\.createdAt\)/);
+  assert.match(source, /generatedReadingKeys\(readingHistory, true\)/);
   assert.match(source, /getTodayFinishedWords/);
   assert.match(source, /listAiReadingHistory/);
   assert.match(source, /MAX_READING_WORDS = 30/);
@@ -44,13 +49,13 @@ test("今日阅读页面只展示已背诵数据并按最多三十个单词生�
   assert.match(source, /六级/);
   assert.match(source, /考研/);
   assert.match(source, /生成中文翻译/);
-  assert.match(source, /生成今日阅读/);
+  assert.match(source, /生成 AI 阅读/);
   assert.match(source, /生成下一篇/);
-  assert.match(source, /重新生成/);
+  assert.match(source, /重新生成文章/);
   assert.match(source, /复制英文/);
   assert.match(source, /复制中英对照/);
-  assert.match(source, /已生成文章/);
-  assert.match(source, /待生成文章/);
+  assert.match(source, /已生成阅读/);
+  assert.match(source, /待生成阅读/);
   assert.match(styleSource, /\.reading-layout/);
   assert.match(styleSource, /\.reading-article-body/);
   assert.match(styleSource, /\.ai-actions button\s*{[^}]*width:\s*104px/s);
@@ -73,10 +78,10 @@ test("Token help link appears above the Token input", () => {
   assert.match(source, /rel="noreferrer"/);
 });
 
-test("Import UI exposes a connection test and remaining-time estimate", () => {
-  assert.match(source, /function testConnection\(\)/);
-  assert.match(source, /MNBridge\.send\("testMomoConnection"/);
-  assert.match(source, /测试连接/);
+test("Import UI uses loading the wordbook as the connection check", () => {
+  assert.doesNotMatch(source, /function testConnection\(\)/);
+  assert.doesNotMatch(source, /MNBridge\.send\("testMomoConnection"/);
+  assert.match(source, /加载词本/);
   assert.match(source, /formatRemainingTime/);
   assert.match(source, /预计剩余/);
   assert.match(source, /estimateDeadline/);

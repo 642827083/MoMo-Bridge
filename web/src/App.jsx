@@ -35,9 +35,22 @@ function readingWordKeys(word) {
   return keys;
 }
 
-function generatedReadingKeys(entries) {
+function localDayKey(value) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
+function isCurrentLocalDay(value) {
+  return localDayKey(value) !== "" && localDayKey(value) === localDayKey(new Date());
+}
+
+function generatedReadingKeys(entries, todayOnly = false) {
   const keys = new Set();
   for (const entry of Array.isArray(entries) ? entries : []) {
+    if (todayOnly && !isCurrentLocalDay(entry?.createdAt)) continue;
     for (const word of Array.isArray(entry?.words) ? entry.words : []) {
       for (const key of readingWordKeys(word)) keys.add(key);
     }
@@ -46,7 +59,7 @@ function generatedReadingKeys(entries) {
 }
 
 function chooseReadingWords(items, entries) {
-  const generated = generatedReadingKeys(entries);
+  const generated = generatedReadingKeys(entries, true);
   return (Array.isArray(items) ? items : [])
     .filter((word) => readingWordKeys(word).every((key) => !generated.has(key)))
     .slice(0, MAX_READING_WORDS);
@@ -98,8 +111,6 @@ function App() {
   const [historyEntries, setHistoryEntries] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [retryingHistoryId, setRetryingHistoryId] = useState("");
-  const [connectionTesting, setConnectionTesting] = useState(false);
-  const [connectionMessage, setConnectionMessage] = useState("");
   const [activePage, setActivePage] = useState("import");
   const [aiApiKey, setAiApiKey] = useState("");
   const [aiBaseUrl, setAiBaseUrl] = useState("https://api.deepseek.com");
@@ -141,7 +152,7 @@ function App() {
     () => notepads.find((notepad) => notepad.id === bookId),
     [bookId, notepads],
   );
-  const generatedTodayKeys = useMemo(() => generatedReadingKeys(readingHistory), [readingHistory]);
+  const generatedTodayKeys = useMemo(() => generatedReadingKeys(readingHistory, true), [readingHistory]);
   const generatedTodayCount = useMemo(
     () => todayItems.filter((word) => readingWordKeys(word).some((key) => generatedTodayKeys.has(key))).length,
     [generatedTodayKeys, todayItems],
@@ -285,7 +296,7 @@ function App() {
     const selectedWords = Array.isArray(words) ? words : [];
     if (selectedWords.length === 0) {
       setReadingMessageKind("warning");
-      setReadingMessage("没有待生成文章的单词");
+      setReadingMessage("没有待生成阅读内容的单词");
       return null;
     }
     if (!aiApiKey.trim()) {
@@ -318,7 +329,7 @@ function App() {
       return payload;
     } catch (error) {
       setReadingMessageKind("error");
-      setReadingMessage(error.message || "生成今日阅读文章失败");
+      setReadingMessage(error.message || "生成 AI 阅读文章失败");
       return null;
     } finally {
       setReadingBusy(false);
@@ -359,23 +370,6 @@ function App() {
     }
   }
 
-  async function testConnection() {
-    if (!token.trim()) {
-      setConnectionMessage("请先填写墨墨开放 API Token");
-      return;
-    }
-    try {
-      setConnectionTesting(true);
-      setConnectionMessage("");
-      const payload = await MNBridge.send("testMomoConnection", { token });
-      setConnectionMessage(payload.message || (payload.canReadNotepads ? "连接成功" : "连接失败"));
-    } catch (error) {
-      setConnectionMessage(error.message || "测试连接失败");
-    } finally {
-      setConnectionTesting(false);
-    }
-  }
-
   function openTokenHelp(event) {
     event.preventDefault();
     MNBridge.send("openExternalURL", { url: TOKEN_HELP_URL }).catch(() => {
@@ -392,7 +386,6 @@ function App() {
     try {
       setBusy(true);
       setMessage("");
-      setConnectionMessage("");
       await saveSettings();
       const payload = await MNBridge.send("listMomoNotepads");
       setNotepads(payload.notepads || []);
@@ -554,7 +547,7 @@ function App() {
           type="button"
           onClick={() => setActivePage("reading")}
         >
-          今日阅读
+          AI 阅读
         </button>
         <button
           className={`page-tab${activePage === "ai" ? " is-active" : ""}`}
@@ -591,11 +584,6 @@ function App() {
             placeholder="粘贴 Token（可带 Bearer 前缀）"
             onChange={(event) => setToken(event.target.value)}
           />
-          <button className="secondary-button connection-button" type="button" disabled={busy || connectionTesting} onClick={testConnection}>
-            {connectionTesting ? "测试中…" : "测试连接"}
-          </button>
-          {connectionMessage ? <p className="selection-note" role="status">{connectionMessage}</p> : null}
-
           <fieldset className="mode-block">
             <legend className="field-label">导入内容</legend>
             <div className="import-options">
@@ -968,20 +956,20 @@ function App() {
         </section>
       </main>
       ) : activePage === "reading" ? (
-        <main className="reading-layout" aria-label="今日阅读">
+        <main className="reading-layout" aria-label="AI 阅读">
           <section className="reading-card">
             <div className="reading-heading">
               <div>
                 <p className="eyebrow">墨墨学习数据</p>
-                <h2>今日阅读</h2>
+                <h2>AI 阅读</h2>
                 <p>根据今日已背诵单词生成一篇适合当前词汇量的英语阅读文章。</p>
               </div>
             </div>
 
             <div className="reading-stat-grid">
               <div><strong>{todayItems.length}</strong><span>今日已背诵</span></div>
-              <div><strong>{generatedTodayCount}</strong><span>已生成文章</span></div>
-              <div><strong>{pendingTodayCount}</strong><span>待生成文章</span></div>
+              <div><strong>{generatedTodayCount}</strong><span>已生成阅读</span></div>
+              <div><strong>{pendingTodayCount}</strong><span>待生成阅读</span></div>
             </div>
 
             <div className="reading-controls">
@@ -1024,7 +1012,7 @@ function App() {
                 </details>
               ) : (
                 <p className="reading-empty-note">
-                  {todayItems.length === 0 ? "请先重新读取今日已背诵单词" : "今日已背诵单词均已生成文章"}
+                  {todayItems.length === 0 ? "请先重新读取今日已背诵单词" : "今日已背诵单词均已有对应阅读"}
                 </p>
               )}
             </div>
@@ -1044,13 +1032,8 @@ function App() {
                 disabled={readingBusy || readingLoading || readingSelection.length === 0}
                 onClick={currentArticle ? generateNextReading : generateSelectedReading}
               >
-                {readingBusy ? "生成中…" : currentArticle ? "生成下一篇" : "生成今日阅读"}
+                {readingBusy ? "生成中…" : currentArticle ? "生成下一篇" : "生成 AI 阅读"}
               </button>
-              {currentArticle ? (
-                <button className="secondary-button reading-action-button reading-regenerate-button" type="button" disabled={readingBusy} onClick={regenerateReading}>
-                  重新生成
-                </button>
-              ) : null}
             </div>
             {readingMessage ? <p className={`reading-message is-${readingMessageKind}`} role="status">{readingMessage}</p> : null}
 
@@ -1058,10 +1041,15 @@ function App() {
               <article className="reading-article">
                 <div className="reading-article-heading">
                   <div>
-                    <p className="eyebrow">本次阅读文章</p>
+                    <p className="eyebrow">本次 AI 阅读文章</p>
                     <h3>{readingArticleTypeLabel(currentArticle.articleType)}</h3>
                   </div>
-                  <span>{currentArticle.words?.length || 0} 个单词</span>
+                  <div className="reading-article-heading-actions">
+                    <span>{currentArticle.words?.length || 0} 个单词</span>
+                    <button className="secondary-button reading-action-button" type="button" disabled={readingBusy} onClick={regenerateReading}>
+                      {readingBusy ? "生成中…" : "重新生成文章"}
+                    </button>
+                  </div>
                 </div>
                 <div className="reading-article-body">{currentArticle.article}</div>
                 {currentArticle.translation ? (
@@ -1115,7 +1103,7 @@ function App() {
             <div className="ai-settings-heading">
               <p className="eyebrow">AI 服务配置</p>
               <h2>AI 设置</h2>
-              <p>配置用于生成今日阅读文章的 AI 服务。</p>
+              <p>配置用于生成 AI 阅读文章的 AI 服务。</p>
             </div>
 
             <div className="ai-settings-form">
@@ -1175,7 +1163,7 @@ function App() {
             {aiMessage ? (
               <p className={`ai-message is-${aiMessageKind}`} role="status">{aiMessage}</p>
             ) : null}
-            <p className="ai-privacy-note">API Key 仅保存在本机，用于生成今日阅读文章，不会发送给墨墨或写入导入历史。</p>
+            <p className="ai-privacy-note">API Key 仅保存在本机，用于生成 AI 阅读文章，不会发送给墨墨或写入导入历史。</p>
           </section>
         </main>
       )}
