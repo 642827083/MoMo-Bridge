@@ -128,7 +128,7 @@ function App() {
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [addWords, setAddWords] = useState(true);
-  const [addExamples, setAddExamples] = useState(true);
+  const [addExamples, setAddExamples] = useState(false);
   const [addStudy, setAddStudy] = useState(false);
   const [advanceStudy, setAdvanceStudy] = useState(false);
   const [importProgress, setImportProgress] = useState(null);

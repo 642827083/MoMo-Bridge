@@ -128,7 +128,7 @@ test("Selection errors include title samples", () => {
 
 test("Import UI exposes independent word, example, and study checkboxes on one row", () => {
   assert.match(source, /const \[addWords, setAddWords\] = useState\(true\)/);
-  assert.match(source, /const \[addExamples, setAddExamples\] = useState\(true\)/);
+  assert.match(source, /const \[addExamples, setAddExamples\] = useState\(false\)/);
   assert.match(source, /const \[addStudy, setAddStudy\] = useState\(false\)/);
   assert.match(source, /const \[advanceStudy, setAdvanceStudy\] = useState\(false\)/);
   assert.equal((source.match(/type="checkbox"/g) || []).length, 5);
