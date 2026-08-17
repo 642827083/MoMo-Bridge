@@ -25,6 +25,30 @@ const READING_LENGTHS = [
   { value: "long", label: "长文" },
 ];
 
+const AI_PROVIDERS = [
+  { value: "deepseek", label: "DeepSeek", baseUrl: "https://api.deepseek.com", model: "deepseek-v4-flash" },
+  { value: "openai", label: "OpenAI", baseUrl: "https://api.openai.com/v1", model: "gpt-4o-mini" },
+  { value: "siliconflow", label: "SiliconFlow", baseUrl: "https://api.siliconflow.cn/v1", model: "Qwen/Qwen2.5-7B-Instruct" },
+  { value: "qwen", label: "通义千问", baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "qwen-plus" },
+  { value: "zhipu", label: "智谱 AI", baseUrl: "https://open.bigmodel.cn/api/paas/v4", model: "glm-4-flash" },
+  { value: "moonshot", label: "Kimi", baseUrl: "https://api.moonshot.cn/v1", model: "moonshot-v1-8k" },
+  { value: "custom", label: "自定义服务商", baseUrl: "", model: "" },
+];
+
+function aiProviderDefinition(value) {
+  return AI_PROVIDERS.find((provider) => provider.value === value) || AI_PROVIDERS[0];
+}
+
+function aiProviderProfile(value, profile) {
+  const provider = aiProviderDefinition(value);
+  const source = profile && typeof profile === "object" ? profile : {};
+  return {
+    apiKey: typeof source.apiKey === "string" ? source.apiKey : "",
+    baseUrl: typeof source.baseUrl === "string" ? source.baseUrl : provider.baseUrl,
+    model: typeof source.model === "string" ? source.model : provider.model,
+  };
+}
+
 function readingWordKeys(word) {
   if (!word || typeof word !== "object") return [];
   const keys = [];
@@ -112,6 +136,8 @@ function App() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [retryingHistoryId, setRetryingHistoryId] = useState("");
   const [activePage, setActivePage] = useState("import");
+  const [aiProvider, setAiProvider] = useState("deepseek");
+  const [aiProfiles, setAiProfiles] = useState({});
   const [aiApiKey, setAiApiKey] = useState("");
   const [aiBaseUrl, setAiBaseUrl] = useState("https://api.deepseek.com");
   const [aiModel, setAiModel] = useState("deepseek-v4-flash");
@@ -194,9 +220,16 @@ function App() {
       .catch(() => setMessage("无法读取本机设置"));
     MNBridge.send("getAiSettings")
       .then((settings) => {
-        setAiApiKey(settings.apiKey || "");
-        setAiBaseUrl(settings.baseUrl || "https://api.deepseek.com");
-        setAiModel(settings.model || "deepseek-v4-flash");
+        const provider = aiProviderDefinition(settings.provider).value;
+        const profiles = settings.providers && typeof settings.providers === "object"
+          ? settings.providers
+          : {};
+        const current = aiProviderProfile(provider, profiles[provider] || settings);
+        setAiProvider(provider);
+        setAiProfiles(profiles);
+        setAiApiKey(current.apiKey);
+        setAiBaseUrl(current.baseUrl);
+        setAiModel(current.model);
       })
       .catch(() => setAiMessage("无法读取 AI 配置"));
     loadImportHistory(false);
@@ -223,17 +256,40 @@ function App() {
     await MNBridge.send("saveSettings", { token, bookId: nextBookId });
   }
 
+  function switchAiProvider(nextProvider) {
+    const next = aiProviderDefinition(nextProvider).value;
+    const currentDraft = aiProviderProfile(aiProvider, {
+      apiKey: aiApiKey,
+      baseUrl: aiBaseUrl,
+      model: aiModel,
+    });
+    const nextDraft = aiProviderProfile(next, aiProfiles[next]);
+    setAiProfiles((profiles) => ({ ...profiles, [aiProvider]: currentDraft }));
+    setAiProvider(next);
+    setAiApiKey(nextDraft.apiKey);
+    setAiBaseUrl(nextDraft.baseUrl);
+    setAiModel(nextDraft.model);
+    setAiMessage("");
+  }
+
   async function saveAiConfiguration() {
     try {
       setAiSaving(true);
       setAiMessage("");
-      await MNBridge.send("saveAiSettings", {
+      const currentDraft = aiProviderProfile(aiProvider, {
         apiKey: aiApiKey,
         baseUrl: aiBaseUrl,
         model: aiModel,
       });
+      const profiles = { ...aiProfiles, [aiProvider]: currentDraft };
+      await MNBridge.send("saveAiSettings", {
+        provider: aiProvider,
+        providers: profiles,
+        ...currentDraft,
+      });
+      setAiProfiles(profiles);
       setAiMessageKind("success");
-      setAiMessage("AI 配置已保存");
+      setAiMessage(`${aiProviderDefinition(aiProvider).label} 配置已保存`);
     } catch (error) {
       setAiMessageKind("error");
       setAiMessage(error.message || "保存 AI 配置失败");
@@ -245,22 +301,23 @@ function App() {
   async function testAiConnection() {
     if (!aiApiKey.trim()) {
       setAiMessageKind("error");
-      setAiMessage("请先填写 DeepSeek API Key");
+      setAiMessage(`请先填写 ${aiProviderDefinition(aiProvider).label} API Key`);
       return;
     }
     try {
       setAiTesting(true);
       setAiMessage("");
       const payload = await MNBridge.send("testAiConnection", {
+        provider: aiProvider,
         apiKey: aiApiKey,
         baseUrl: aiBaseUrl,
         model: aiModel,
       });
       setAiMessageKind(payload.modelAvailable === false ? "warning" : "success");
-      setAiMessage(payload.message || "DeepSeek API 连接成功");
+      setAiMessage(payload.message || `${aiProviderDefinition(aiProvider).label} API 连接成功`);
     } catch (error) {
       setAiMessageKind("error");
-      setAiMessage(error.message || "测试 DeepSeek 连接失败");
+      setAiMessage(error.message || `测试 ${aiProviderDefinition(aiProvider).label} 连接失败`);
     } finally {
       setAiTesting(false);
     }
@@ -301,7 +358,7 @@ function App() {
     }
     if (!aiApiKey.trim()) {
       setReadingMessageKind("error");
-      setReadingMessage("请先在 AI 设置页面填写 DeepSeek API Key");
+      setReadingMessage(`请先在 AI 设置页面填写 ${aiProviderDefinition(aiProvider).label} API Key`);
       setActivePage("ai");
       return null;
     }
@@ -310,6 +367,7 @@ function App() {
       setReadingMessage("");
       const payload = await MNBridge.send("generateTodayReading", {
         settings: {
+          provider: aiProvider,
           apiKey: aiApiKey,
           baseUrl: aiBaseUrl,
           model: aiModel,
@@ -1073,7 +1131,7 @@ function App() {
               </div>
               <span className="count-badge">{readingHistory.length} 篇</span>
             </div>
-            <p className="history-privacy">只保存文章、日期和单词 ID，不保存墨墨 Token 或 DeepSeek API Key。</p>
+            <p className="history-privacy">只保存文章、日期和单词 ID，不保存墨墨 Token 或各 AI 服务商 API Key。</p>
             {readingHistory.length ? (
               <div className="reading-history-list">
                 {readingHistory.slice(0, 8).map((entry) => (
@@ -1103,19 +1161,33 @@ function App() {
             <div className="ai-settings-heading">
               <p className="eyebrow">AI 服务配置</p>
               <h2>AI 设置</h2>
-              <p>配置用于生成 AI 阅读文章的 AI 服务。</p>
+              <p>配置用于生成 AI 阅读文章的 AI 服务，并分别保存各服务商的配置。</p>
             </div>
 
             <div className="ai-settings-form">
               <div className="ai-field">
-                <label className="field-label" htmlFor="deepseek-api-key">DeepSeek API Key</label>
+                <label className="field-label" htmlFor="ai-provider">AI 服务商</label>
+                <select
+                  id="ai-provider"
+                  value={aiProvider}
+                  onChange={(event) => switchAiProvider(event.target.value)}
+                >
+                  {AI_PROVIDERS.map((provider) => (
+                    <option key={provider.value} value={provider.value}>{provider.label}</option>
+                  ))}
+                </select>
+                <p className="field-hint">切换服务商会自动带入对应 API 地址和推荐模型。</p>
+              </div>
+
+              <div className="ai-field">
+                <label className="field-label" htmlFor="ai-api-key">{aiProviderDefinition(aiProvider).label} API Key</label>
                 <div className="secret-input-row">
                   <input
-                    id="deepseek-api-key"
+                    id="ai-api-key"
                     type={showAiKey ? "text" : "password"}
                     value={aiApiKey}
                     autoComplete="off"
-                    placeholder="粘贴 DeepSeek API Key"
+                    placeholder={`粘贴 ${aiProviderDefinition(aiProvider).label} API Key`}
                     onChange={(event) => setAiApiKey(event.target.value)}
                   />
                   <button
@@ -1130,22 +1202,23 @@ function App() {
               </div>
 
               <div className="ai-field">
-                <label className="field-label" htmlFor="deepseek-base-url">API 地址</label>
+                <label className="field-label" htmlFor="ai-base-url">API 地址</label>
                 <input
-                  id="deepseek-base-url"
+                  id="ai-base-url"
                   type="url"
                   value={aiBaseUrl}
-                  placeholder="https://api.deepseek.com"
+                  placeholder={aiProviderDefinition(aiProvider).baseUrl || "https://example.com/v1"}
                   onChange={(event) => setAiBaseUrl(event.target.value)}
                 />
+                <p className="field-hint">已自动填入默认地址，也可以改为兼容 OpenAI 格式的代理地址。</p>
               </div>
 
               <div className="ai-field">
-                <label className="field-label" htmlFor="deepseek-model">模型</label>
+                <label className="field-label" htmlFor="ai-model">模型</label>
                 <input
-                  id="deepseek-model"
+                  id="ai-model"
                   value={aiModel}
-                  placeholder="deepseek-v4-flash"
+                  placeholder={aiProviderDefinition(aiProvider).model || "填写服务商模型名称"}
                   onChange={(event) => setAiModel(event.target.value)}
                 />
               </div>
@@ -1163,7 +1236,7 @@ function App() {
             {aiMessage ? (
               <p className={`ai-message is-${aiMessageKind}`} role="status">{aiMessage}</p>
             ) : null}
-            <p className="ai-privacy-note">API Key 仅保存在本机，用于生成 AI 阅读文章，不会发送给墨墨或写入导入历史。</p>
+            <p className="ai-privacy-note">各服务商 API Key 仅保存在本机，用于生成 AI 阅读文章，不会发送给墨墨或写入导入历史。</p>
           </section>
         </main>
       )}

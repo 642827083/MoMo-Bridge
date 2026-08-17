@@ -22,17 +22,43 @@ test("AI settings page keeps connection fields separate from article options", (
   assert.match(source, /const \[activePage, setActivePage\] = useState\("import"\)/);
   assert.match(source, /AI 设置/);
   assert.match(source, /配置用于生成 AI 阅读文章的 AI 服务/);
-  assert.match(source, /id="deepseek-api-key"/);
-  assert.match(source, /id="deepseek-base-url"/);
-  assert.match(source, /id="deepseek-model"/);
+  assert.match(source, /id="ai-api-key"/);
+  assert.match(source, /id="ai-base-url"/);
+  assert.match(source, /id="ai-model"/);
   assert.match(source, /MNBridge\.send\("getAiSettings"\)/);
   assert.match(source, /MNBridge\.send\("saveAiSettings"/);
   assert.match(source, /MNBridge\.send\("testAiConnection"/);
   assert.match(source, /测试连接/);
   assert.match(source, /保存设置/);
-  assert.match(source, /API Key 仅保存在本机/);
+  assert.match(source, /各服务商 API Key 仅保存在本机/);
   assert.match(styleSource, /\.ai-settings-layout/);
   assert.match(styleSource, /\.ai-settings-card/);
+});
+
+test("AI settings supports multiple providers and keeps provider profiles separate", () => {
+  assert.match(source, /const AI_PROVIDERS = \[/);
+  assert.match(source, /value: "deepseek"/);
+  assert.match(source, /value: "openai"/);
+  assert.match(source, /value: "siliconflow"/);
+  assert.match(source, /value: "qwen"/);
+  assert.match(source, /value: "zhipu"/);
+  assert.match(source, /value: "moonshot"/);
+  assert.match(source, /value: "custom"/);
+  assert.match(source, /id="ai-provider"/);
+  assert.match(source, /function switchAiProvider\(nextProvider\)/);
+  assert.match(source, /providers: profiles/);
+  assert.match(source, /provider: aiProvider/);
+  assert.match(source, /切换服务商会自动带入对应 API 地址和推荐模型/);
+});
+
+test("Three pages share heading, history, and mobile layout foundations", () => {
+  assert.match(styleSource, /\.ai-settings-heading\s*\{[^}]*padding:\s*0;[^}]*border:\s*0;/s);
+  assert.match(styleSource, /\.ai-settings-heading p:last-child\s*\{[^}]*font-size:\s*12px;[^}]*line-height:\s*1\.5;/s);
+  assert.match(styleSource, /\.reading-history-item\s*\{[^}]*border-radius:\s*6px;/s);
+  assert.match(styleSource, /\.reading-history-item summary\s*\{[^}]*padding:\s*9px 10px;/s);
+  assert.match(styleSource, /\.import-layout,\s*\n\s*\.reading-layout,\s*\n\s*\.ai-settings-layout\s*\{[^}]*padding:\s*18px;/s);
+  assert.doesNotMatch(styleSource, /@media[\s\S]*\.import-options\s*\{[^}]*grid-template-columns:\s*1fr;/s);
+  assert.match(source, /各 AI 服务商 API Key/);
 });
 
 test("AI 阅读页面只展示已背诵数据并按最多三十个单词生成", () => {

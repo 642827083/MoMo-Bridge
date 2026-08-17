@@ -4,6 +4,8 @@ var __MN_WEB_BRIDGE_COMMANDS_GLOBAL__ = (function () {
   const AI_API_KEY_KEY = "cn.marginnote.momo-vocabulary-import.deepseek-api-key";
   const AI_BASE_URL_KEY = "cn.marginnote.momo-vocabulary-import.deepseek-base-url";
   const AI_MODEL_KEY = "cn.marginnote.momo-vocabulary-import.deepseek-model";
+  const AI_PROVIDER_KEY = "cn.marginnote.momo-vocabulary-import.ai-provider";
+  const AI_PROFILES_KEY = "cn.marginnote.momo-vocabulary-import.ai-provider-profiles";
 
   function toBridgePayload(value) {
     return value === undefined ? null : value;
@@ -68,12 +70,49 @@ var __MN_WEB_BRIDGE_COMMANDS_GLOBAL__ = (function () {
     return { saved: true, tokenConfigured: !!token, bookId };
   }
 
+  function readAiProfiles() {
+    const defaults = NSUserDefaults.standardUserDefaults();
+    const raw = defaults.objectForKey(AI_PROFILES_KEY);
+    if (!raw) return {};
+    try {
+      const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+      return parsed && typeof parsed === "object" ? parsed : {};
+    } catch (ignored) {
+      return {};
+    }
+  }
+
+  function safeAiProfile(provider, value) {
+    const source = value && typeof value === "object" ? value : {};
+    const defaults = __MN_DEEPSEEK_API_GLOBAL__.providerDefinition(provider);
+    return {
+      apiKey: typeof source.apiKey === "string" ? source.apiKey : "",
+      baseUrl: typeof source.baseUrl === "string" ? source.baseUrl : defaults.baseUrl,
+      model: typeof source.model === "string" ? source.model : defaults.model,
+    };
+  }
+
   function savedAiSettings() {
     const defaults = NSUserDefaults.standardUserDefaults();
-    return {
+    const provider = typeof defaults.objectForKey(AI_PROVIDER_KEY) === "string"
+      ? defaults.objectForKey(AI_PROVIDER_KEY)
+      : __MN_DEEPSEEK_API_GLOBAL__.DEFAULT_PROVIDER;
+    const profiles = readAiProfiles();
+    const legacyDeepSeek = {
       apiKey: defaults.objectForKey(AI_API_KEY_KEY) || "",
       baseUrl: defaults.objectForKey(AI_BASE_URL_KEY) || __MN_DEEPSEEK_API_GLOBAL__.DEFAULT_BASE_URL,
       model: defaults.objectForKey(AI_MODEL_KEY) || __MN_DEEPSEEK_API_GLOBAL__.DEFAULT_MODEL,
+    };
+    if (!profiles.deepseek || (!profiles.deepseek.apiKey && legacyDeepSeek.apiKey)) {
+      profiles.deepseek = Object.assign({}, safeAiProfile("deepseek", profiles.deepseek), legacyDeepSeek);
+    }
+    const current = safeAiProfile(provider, profiles[provider]);
+    return {
+      provider,
+      providers: profiles,
+      apiKey: current.apiKey,
+      baseUrl: current.baseUrl,
+      model: current.model,
     };
   }
 
@@ -82,13 +121,34 @@ var __MN_WEB_BRIDGE_COMMANDS_GLOBAL__ = (function () {
   }
 
   function saveAiSettings(context, payload) {
-    const settings = __MN_DEEPSEEK_API_GLOBAL__.normalizeSettings(payload || {});
+    const input = payload && typeof payload === "object" ? payload : {};
+    const requestedProvider = input.provider || __MN_DEEPSEEK_API_GLOBAL__.DEFAULT_PROVIDER;
+    const settings = __MN_DEEPSEEK_API_GLOBAL__.normalizeSettings(Object.assign({}, input, { provider: requestedProvider }));
+    const provider = settings.provider;
     const defaults = NSUserDefaults.standardUserDefaults();
-    defaults.setObjectForKey(settings.apiKey, AI_API_KEY_KEY);
-    defaults.setObjectForKey(settings.baseUrl, AI_BASE_URL_KEY);
-    defaults.setObjectForKey(settings.model, AI_MODEL_KEY);
+    const profiles = readAiProfiles();
+    const submittedProfiles = input.providers && typeof input.providers === "object"
+      ? input.providers
+      : {};
+    Object.keys(submittedProfiles).forEach(function (profileProvider) {
+      profiles[profileProvider] = safeAiProfile(profileProvider, submittedProfiles[profileProvider]);
+    });
+    profiles[provider] = {
+      apiKey: settings.apiKey,
+      baseUrl: settings.baseUrl,
+      model: settings.model,
+    };
+    defaults.setObjectForKey(JSON.stringify(profiles), AI_PROFILES_KEY);
+    defaults.setObjectForKey(provider, AI_PROVIDER_KEY);
+    if (provider === "deepseek") {
+      defaults.setObjectForKey(settings.apiKey, AI_API_KEY_KEY);
+      defaults.setObjectForKey(settings.baseUrl, AI_BASE_URL_KEY);
+      defaults.setObjectForKey(settings.model, AI_MODEL_KEY);
+    }
     return {
       saved: true,
+      provider,
+      providerLabel: __MN_DEEPSEEK_API_GLOBAL__.providerLabel(provider),
       apiKeyConfigured: !!settings.apiKey,
       baseUrl: settings.baseUrl,
       model: settings.model,

@@ -162,6 +162,21 @@ test("DeepSeek API uses native HTTPS requests and keeps AI settings local", () =
   assert.match(bridgeSource, /testAiConnection,/);
 });
 
+test("AI API supports OpenAI-compatible providers and separate local profiles", () => {
+  assert.match(deepSeekSource, /DEFAULT_PROVIDER = "deepseek"/);
+  assert.match(deepSeekSource, /https:\/\/api\.openai\.com\/v1/);
+  assert.match(deepSeekSource, /https:\/\/api\.siliconflow\.cn\/v1/);
+  assert.match(deepSeekSource, /compatible-mode\/v1/);
+  assert.match(deepSeekSource, /https:\/\/open\.bigmodel\.cn\/api\/paas\/v4/);
+  assert.match(deepSeekSource, /https:\/\/api\.moonshot\.cn\/v1/);
+  assert.match(deepSeekSource, /function normalizeProvider\(value\)/);
+  assert.match(deepSeekSource, /chat\/completions/);
+  assert.match(bridgeSource, /ai-provider-profiles/);
+  assert.match(bridgeSource, /JSON\.stringify\(profiles\)/);
+  assert.match(bridgeSource, /function readAiProfiles\(\)/);
+  assert.match(bridgeSource, /providers: profiles/);
+});
+
 test("今日阅读读取已背诵单词并保存文章历史", () => {
   assert.match(source, /\/memo\/study\/get_today_items/);
   assert.match(source, /is_finished: true/);

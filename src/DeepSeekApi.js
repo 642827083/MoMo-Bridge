@@ -1,7 +1,71 @@
 var __MN_DEEPSEEK_API_GLOBAL__ = (function () {
+  const DEFAULT_PROVIDER = "deepseek";
   const DEFAULT_BASE_URL = "https://api.deepseek.com";
   const DEFAULT_MODEL = "deepseek-v4-flash";
   const DEEPSEEK_REQUEST_TIMEOUT_SECONDS = 90;
+  const AI_PROVIDERS = [
+    {
+      id: "deepseek",
+      label: "DeepSeek",
+      baseUrl: DEFAULT_BASE_URL,
+      model: DEFAULT_MODEL,
+    },
+    {
+      id: "openai",
+      label: "OpenAI",
+      baseUrl: "https://api.openai.com/v1",
+      model: "gpt-4o-mini",
+    },
+    {
+      id: "siliconflow",
+      label: "SiliconFlow",
+      baseUrl: "https://api.siliconflow.cn/v1",
+      model: "Qwen/Qwen2.5-7B-Instruct",
+    },
+    {
+      id: "qwen",
+      label: "通义千问",
+      baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      model: "qwen-plus",
+    },
+    {
+      id: "zhipu",
+      label: "智谱 AI",
+      baseUrl: "https://open.bigmodel.cn/api/paas/v4",
+      model: "glm-4-flash",
+    },
+    {
+      id: "moonshot",
+      label: "Kimi",
+      baseUrl: "https://api.moonshot.cn/v1",
+      model: "moonshot-v1-8k",
+    },
+    {
+      id: "custom",
+      label: "自定义服务商",
+      baseUrl: "",
+      model: "",
+    },
+  ];
+
+  function providerDefinition(provider) {
+    return AI_PROVIDERS.find((item) => item.id === provider) || AI_PROVIDERS[0];
+  }
+
+  function normalizeProvider(value) {
+    const provider = typeof value === "string" ? value.trim() : "";
+    return AI_PROVIDERS.some((item) => item.id === provider) ? provider : DEFAULT_PROVIDER;
+  }
+
+  function providerLabel(provider) {
+    return providerDefinition(normalizeProvider(provider)).label;
+  }
+
+  function providerApiName(provider) {
+    return normalizeProvider(provider) === "deepseek"
+      ? "DeepSeek API"
+      : `${providerLabel(provider)} API`;
+  }
 
   function valueForKey(object, key) {
     if (!object) return undefined;
@@ -44,30 +108,38 @@ var __MN_DEEPSEEK_API_GLOBAL__ = (function () {
       || (typeof NSNull !== "undefined" && value instanceof NSNull);
   }
 
-  function normalizeBaseUrl(value) {
+  function normalizeBaseUrl(value, provider) {
+    const definition = providerDefinition(provider);
     const raw = typeof value === "string" && value.trim()
       ? value.trim()
-      : DEFAULT_BASE_URL;
+      : definition.baseUrl;
+    if (!raw) throw new Error("请填写 AI API 地址");
     if (!/^https:\/\//i.test(raw)) {
-      throw new Error("DeepSeek API 地址必须使用 HTTPS");
+      throw new Error("AI API 地址必须使用 HTTPS");
     }
-    const url = NSURL.URLWithString(raw);
-    if (!url) throw new Error("DeepSeek API 地址无效");
-    return raw.replace(/\/+$/, "");
+    const normalized = raw
+      .replace(/\/(?:chat\/completions|models)$/i, "")
+      .replace(/\/+$/, "");
+    const url = NSURL.URLWithString(normalized);
+    if (!url) throw new Error("AI API 地址无效");
+    return normalized;
   }
 
   function normalizeSettings(settings) {
     const source = settings && typeof settings === "object" ? settings : {};
+    const provider = normalizeProvider(source.provider);
+    const definition = providerDefinition(provider);
     return {
+      provider,
       apiKey: typeof source.apiKey === "string" ? source.apiKey.trim().replace(/^Bearer\s+/i, "") : "",
-      baseUrl: normalizeBaseUrl(source.baseUrl),
+      baseUrl: normalizeBaseUrl(source.baseUrl, provider),
       model: typeof source.model === "string" && source.model.trim()
         ? source.model.trim()
-        : DEFAULT_MODEL,
+        : definition.model,
     };
   }
 
-  function apiErrorMessage(payload) {
+  function apiErrorMessage(payload, settings) {
     const direct = valueForKey(payload, "message");
     if (direct) return String(direct);
     const error = valueForKey(payload, "error");
@@ -76,7 +148,8 @@ var __MN_DEEPSEEK_API_GLOBAL__ = (function () {
     if (nested) return String(nested);
     const firstError = arrayItems(valueForKey(payload, "errors"))[0];
     const nestedError = valueForKey(firstError, "message") || valueForKey(firstError, "msg");
-    return nestedError ? String(nestedError) : "DeepSeek API 拒绝了请求";
+    if (nestedError) return String(nestedError);
+    return `${providerApiName(settings && settings.provider)} 拒绝了请求`;
   }
 
   function requestJSON(settings, path, method, body) {
@@ -86,12 +159,12 @@ var __MN_DEEPSEEK_API_GLOBAL__ = (function () {
     } catch (error) {
       return Promise.reject(error);
     }
-    if (!config.apiKey) return Promise.reject(new Error("请先填写 DeepSeek API Key"));
+    if (!config.apiKey) return Promise.reject(new Error(`请先填写 ${providerLabel(config.provider)} API Key`));
 
     return new Promise(function (resolve, reject) {
       const url = NSURL.URLWithString(`${config.baseUrl}${path}`);
       if (!url) {
-        reject(new Error("DeepSeek API 地址无效"));
+        reject(new Error(`${providerApiName(config.provider)} 地址无效`));
         return;
       }
 
@@ -117,9 +190,12 @@ var __MN_DEEPSEEK_API_GLOBAL__ = (function () {
         function (response, data, error) {
           if (!isNativeNil(error)) {
             const detail = nativeErrorMessage(error);
+            const networkPrefix = config.provider === "deepseek"
+              ? "无法连接 DeepSeek API"
+              : `无法连接 ${providerApiName(config.provider)}`;
             const networkError = new Error(detail
-              ? `无法连接 DeepSeek API：${detail}`
-              : "无法连接 DeepSeek API，请检查网络后重试");
+              ? `${networkPrefix}：${detail}`
+              : `${networkPrefix}，请检查网络后重试`);
             networkError.isNetworkError = true;
             reject(networkError);
             return;
@@ -130,16 +206,16 @@ var __MN_DEEPSEEK_API_GLOBAL__ = (function () {
           try {
             payload = isNativeNil(data) ? {} : NSJSONSerialization.JSONObjectWithDataOptions(data, 1);
           } catch (parseError) {
-            reject(new Error("DeepSeek API 返回了无法识别的数据"));
+            reject(new Error(`${providerApiName(config.provider)} 返回了无法识别的数据`));
             return;
           }
 
           if (!Number.isFinite(statusCode)) {
-            reject(new Error("DeepSeek API 未返回有效响应"));
+            reject(new Error(`${providerApiName(config.provider)} 未返回有效响应`));
             return;
           }
           if (statusCode < 200 || statusCode >= 300) {
-            const apiError = new Error(apiErrorMessage(payload));
+            const apiError = new Error(apiErrorMessage(payload, config));
             apiError.statusCode = statusCode;
             reject(apiError);
             return;
@@ -152,7 +228,7 @@ var __MN_DEEPSEEK_API_GLOBAL__ = (function () {
 
   function testConnection(settings) {
     const config = normalizeSettings(settings);
-    if (!config.apiKey) return Promise.reject(new Error("请先填写 DeepSeek API Key"));
+    if (!config.apiKey) return Promise.reject(new Error(`请先填写 ${providerLabel(config.provider)} API Key`));
 
     return requestJSON(config, "/chat/completions", "POST", {
       model: config.model,
@@ -164,6 +240,8 @@ var __MN_DEEPSEEK_API_GLOBAL__ = (function () {
       return {
         connected: true,
         modelAvailable: true,
+        provider: config.provider,
+        providerLabel: providerLabel(config.provider),
         message: "连接成功，当前模型可以生成文章",
       };
     });
@@ -306,14 +384,20 @@ var __MN_DEEPSEEK_API_GLOBAL__ = (function () {
         articleType,
         length,
         includeTranslation,
+        provider: config.provider,
+        providerLabel: providerLabel(config.provider),
         model: config.model,
       };
     });
   }
 
   return {
+    DEFAULT_PROVIDER,
     DEFAULT_BASE_URL,
     DEFAULT_MODEL,
+    AI_PROVIDERS,
+    providerDefinition,
+    providerLabel,
     normalizeSettings,
     testConnection,
     generateArticle,
