@@ -187,6 +187,26 @@ var __MN_WEB_BRIDGE_COMMANDS_GLOBAL__ = (function () {
     });
   }
 
+  function generateReadingQuestions(context, payload) {
+    const input = payload && typeof payload === "object" ? payload : {};
+    const settings = input.settings && typeof input.settings === "object"
+      ? input.settings
+      : savedAiSettings();
+    return __MN_DEEPSEEK_API_GLOBAL__.generateQuestions(
+      settings,
+      input.article,
+      input.words,
+      input,
+    ).then(function (result) {
+      const historyId = input.historyId || input.articleId;
+      const historyEntry = __MN_MOMO_READING_HISTORY_GLOBAL__.recordQuestions(
+        historyId,
+        result.questions,
+      );
+      return Object.assign({}, result, { historyEntry });
+    });
+  }
+
   function getSelectedTitles(context) {
     if (!context.addon || !context.addon.window) {
       throw new Error("当前未连接到 MarginNote 学习窗口");
@@ -365,6 +385,7 @@ var __MN_WEB_BRIDGE_COMMANDS_GLOBAL__ = (function () {
     getTodayFinishedWords,
     listAiReadingHistory,
     generateTodayReading,
+    generateReadingQuestions,
     getSelectedTitles,
     getSelectedCards,
     listMomoNotepads,

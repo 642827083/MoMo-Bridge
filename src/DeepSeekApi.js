@@ -2,7 +2,8 @@ var __MN_DEEPSEEK_API_GLOBAL__ = (function () {
   const DEFAULT_PROVIDER = "deepseek";
   const DEFAULT_BASE_URL = "https://api.deepseek.com";
   const DEFAULT_MODEL = "deepseek-v4-flash";
-  const DEEPSEEK_REQUEST_TIMEOUT_SECONDS = 90;
+  const DEEPSEEK_TEST_TIMEOUT_SECONDS = 30;
+  const DEEPSEEK_GENERATION_TIMEOUT_SECONDS = 180;
   const AI_PROVIDERS = [
     {
       id: "deepseek",
@@ -152,7 +153,7 @@ var __MN_DEEPSEEK_API_GLOBAL__ = (function () {
     return `${providerApiName(settings && settings.provider)} 拒绝了请求`;
   }
 
-  function requestJSON(settings, path, method, body) {
+  function requestJSON(settings, path, method, body, requestOptions) {
     let config;
     try {
       config = normalizeSettings(settings);
@@ -160,6 +161,14 @@ var __MN_DEEPSEEK_API_GLOBAL__ = (function () {
       return Promise.reject(error);
     }
     if (!config.apiKey) return Promise.reject(new Error(`请先填写 ${providerLabel(config.provider)} API Key`));
+
+    const options = requestOptions && typeof requestOptions === "object" ? requestOptions : {};
+    const timeoutSeconds = Number(options.timeoutSeconds) > 0
+      ? Number(options.timeoutSeconds)
+      : DEEPSEEK_GENERATION_TIMEOUT_SECONDS;
+    const operationLabel = typeof options.operationLabel === "string" && options.operationLabel.trim()
+      ? options.operationLabel.trim()
+      : "请求";
 
     return new Promise(function (resolve, reject) {
       const url = NSURL.URLWithString(`${config.baseUrl}${path}`);
@@ -170,7 +179,7 @@ var __MN_DEEPSEEK_API_GLOBAL__ = (function () {
 
       const request = NSMutableURLRequest.requestWithURL(url);
       request.setHTTPMethod(method);
-      request.setTimeoutInterval(DEEPSEEK_REQUEST_TIMEOUT_SECONDS);
+      request.setTimeoutInterval(timeoutSeconds);
       request.setAllHTTPHeaderFields({
         "Authorization": `Bearer ${config.apiKey}`,
         "Content-Type": "application/json",
@@ -193,9 +202,12 @@ var __MN_DEEPSEEK_API_GLOBAL__ = (function () {
             const networkPrefix = config.provider === "deepseek"
               ? "无法连接 DeepSeek API"
               : `无法连接 ${providerApiName(config.provider)}`;
-            const networkError = new Error(detail
-              ? `${networkPrefix}：${detail}`
-              : `${networkPrefix}，请检查网络后重试`);
+            const timeout = /timeout|timed out|超时|-1001/i.test(detail);
+            const networkError = new Error(timeout
+              ? `${networkPrefix}：${operationLabel}请求超时，请稍后重试`
+              : detail
+                ? `${networkPrefix}：${detail}`
+                : `${networkPrefix}，请检查网络后重试`);
             networkError.isNetworkError = true;
             reject(networkError);
             return;
@@ -236,6 +248,9 @@ var __MN_DEEPSEEK_API_GLOBAL__ = (function () {
       max_tokens: 1,
       temperature: 0,
       stream: false,
+    }, {
+      timeoutSeconds: DEEPSEEK_TEST_TIMEOUT_SECONDS,
+      operationLabel: "测试连接",
     }).then(function () {
       return {
         connected: true,
@@ -301,6 +316,39 @@ var __MN_DEEPSEEK_API_GLOBAL__ = (function () {
     return typeof content === "string" ? content.trim() : "";
   }
 
+  function normalizeArticleParagraph(value, includeTranslation) {
+    if (typeof value === "string") {
+      const english = value.trim();
+      return english ? { english, translation: "" } : null;
+    }
+    if (!value || typeof value !== "object") return null;
+    const english = String(
+      valueForKey(value, "english") || valueForKey(value, "article") || valueForKey(value, "text") || "",
+    ).trim();
+    const translation = includeTranslation
+      ? String(valueForKey(value, "translation") || valueForKey(value, "chinese") || "").trim()
+      : "";
+    return english ? { english, translation } : null;
+  }
+
+  function normalizeArticleParagraphs(values, includeTranslation) {
+    return arrayItems(values)
+      .map(function (value) { return normalizeArticleParagraph(value, includeTranslation); })
+      .filter(Boolean);
+  }
+
+  function paragraphArticleText(paragraphs) {
+    return paragraphs.map(function (paragraph) { return paragraph.english; }).join("\n\n").trim();
+  }
+
+  function paragraphTranslationText(paragraphs) {
+    return paragraphs
+      .map(function (paragraph) { return paragraph.translation; })
+      .filter(Boolean)
+      .join("\n\n")
+      .trim();
+  }
+
   function parseArticleContent(content, includeTranslation) {
     const source = String(content || "").trim();
     const cleaned = source
@@ -309,9 +357,17 @@ var __MN_DEEPSEEK_API_GLOBAL__ = (function () {
       .trim();
     try {
       const parsed = JSON.parse(cleaned);
+      const paragraphs = normalizeArticleParagraphs(valueForKey(parsed, "paragraphs"), includeTranslation);
+      if (paragraphs.length > 0) {
+        return {
+          article: paragraphArticleText(paragraphs),
+          translation: includeTranslation ? paragraphTranslationText(paragraphs) : "",
+          paragraphs,
+        };
+      }
       const article = typeof parsed.article === "string" ? parsed.article.trim() : "";
       const translation = typeof parsed.translation === "string" ? parsed.translation.trim() : "";
-      if (article) return { article, translation: includeTranslation ? translation : "" };
+      if (article) return { article, translation: includeTranslation ? translation : "", paragraphs: [] };
     } catch (ignored) {
       // 模型未返回 JSON 时继续按标题分隔文本解析。
     }
@@ -321,9 +377,141 @@ var __MN_DEEPSEEK_API_GLOBAL__ = (function () {
       return {
         article: marker[1].trim(),
         translation: includeTranslation && marker[2] ? marker[2].trim() : "",
+        paragraphs: [],
       };
     }
-    return { article: cleaned, translation: "" };
+    return { article: cleaned, translation: "", paragraphs: [] };
+  }
+
+  function questionOptions(value) {
+    const source = value && typeof value === "object" ? value : {};
+    const letters = ["A", "B", "C", "D"];
+    if (Array.isArray(value)) {
+      return letters.reduce(function (result, letter, index) {
+        const option = value[index];
+        result[letter] = typeof option === "string" ? option.trim() : "";
+        return result;
+      }, {});
+    }
+    return letters.reduce(function (result, letter) {
+      const option = valueForKey(source, letter) || valueForKey(source, letter.toLowerCase());
+      result[letter] = typeof option === "string" ? option.trim() : "";
+      return result;
+    }, {});
+  }
+
+  function normalizeQuestion(value) {
+    if (!value || typeof value !== "object") return null;
+    const question = String(valueForKey(value, "question") || valueForKey(value, "stem") || "").trim();
+    const options = questionOptions(valueForKey(value, "options") || valueForKey(value, "choices"));
+    const answerValue = String(
+      valueForKey(value, "answer") || valueForKey(value, "correctAnswer") || "",
+    ).trim().toUpperCase();
+    const answer = answerValue.match(/[ABCD]/) ? answerValue.match(/[ABCD]/)[0] : "";
+    const explanation = String(valueForKey(value, "explanation") || valueForKey(value, "analysis") || "").trim();
+    if (!question || !explanation || !answer) return null;
+    if (["A", "B", "C", "D"].some(function (letter) { return !options[letter]; })) return null;
+    return { question, options, answer, explanation };
+  }
+
+  function parseQuestionsContent(content) {
+    const source = String(content || "").trim();
+    const cleaned = source
+      .replace(/^```(?:json|text)?\s*/i, "")
+      .replace(/\s*```$/i, "")
+      .trim();
+    let parsed;
+    try {
+      parsed = JSON.parse(cleaned);
+    } catch (error) {
+      throw new Error("AI 返回的阅读题不是有效 JSON");
+    }
+    const rawQuestions = Array.isArray(parsed)
+      ? parsed
+      : valueForKey(parsed, "questions") || valueForKey(parsed, "items");
+    const questions = arrayItems(rawQuestions)
+      .map(normalizeQuestion)
+      .filter(Boolean);
+    if (questions.length < 3 || questions.length > 5) {
+      throw new Error("AI 返回的阅读题数量应为 3 至 5 道");
+    }
+    return questions;
+  }
+
+  function questionTypeGuidance(articleType) {
+    if (articleType === "cet6") {
+      return "题目应重视段落主旨、作者观点、逻辑关系、推断和词义判断，干扰项可以有一定迷惑性，但答案必须能够从文章中找到依据。";
+    }
+    if (articleType === "postgraduate1") {
+      return "题目应接近考研英语一阅读理解，重视主旨、作者态度、论证结构、细节推断、观点关系和语义理解，避免简单逐句翻译题。";
+    }
+    if (articleType === "postgraduate2") {
+      return "题目应接近考研英语二阅读理解，重视文章主旨、事实细节、因果关系、态度判断和词义推断，题目清晰实用，难度低于英语一。";
+    }
+    return "题目应接近大学英语四级阅读理解，重视主旨、细节、推断、词义和文章结构，题干清晰，避免过度复杂的学术表达。";
+  }
+
+  function generateQuestions(settings, article, words, options) {
+    const config = normalizeSettings(settings);
+    const articleText = typeof article === "string" ? article.trim() : "";
+    if (!articleText) return Promise.reject(new Error("没有可用于生成阅读题的文章"));
+
+    const readingOptions = options && typeof options === "object" ? options : {};
+    const articleType = ["cet4", "cet6", "postgraduate1", "postgraduate2"].indexOf(readingOptions.articleType) >= 0
+      ? readingOptions.articleType
+      : "postgraduate2";
+    const requestedCount = Number(readingOptions.questionCount);
+    const questionCount = Number.isFinite(requestedCount)
+      ? Math.max(3, Math.min(5, Math.floor(requestedCount)))
+      : 4;
+    const selectedWords = normalizeReadingWords(words);
+    const wordText = selectedWords.map(function (word) { return word.spelling; }).join(", ");
+    const prompt = [
+      "请根据下面的英文阅读文章生成阅读理解选择题。",
+      `考试类型：${articleTypeText(articleType)}。`,
+      `题目数量：${questionCount} 道。`,
+      questionTypeGuidance(articleType),
+      "每道题提供一个英文题干和 A、B、C、D 四个英文选项。",
+      "每道题只能有一个正确答案；答案必须能从文章内容直接或合理推断得出，不得依赖文章之外的知识。",
+      "选项应有合理干扰项，不要使用‘以上都对’或‘以上都不对’。",
+      "explanation 字段使用简洁、准确的中文说明答案依据。",
+      wordText ? `本篇文章使用的目标单词包括：${wordText}。` : "",
+      "英文文章如下：",
+      "--- ARTICLE START ---",
+      articleText,
+      "--- ARTICLE END ---",
+      "必须只输出以下 JSON，不要使用 Markdown 代码块，不要添加任何额外说明：",
+      '{"questions":[{"question":"英文题干","options":{"A":"选项 A","B":"选项 B","C":"选项 C","D":"选项 D"},"answer":"A","explanation":"中文解析"}]}'
+    ].filter(Boolean).join("\n");
+
+    return requestJSON(config, "/chat/completions", "POST", {
+      model: config.model,
+      messages: [
+        {
+          role: "system",
+          content: "你是一名英语考试阅读理解命题助手，必须根据给定文章和考试类型生成规范的选择题，并严格返回 JSON。",
+        },
+        { role: "user", content: prompt },
+      ],
+      temperature: 0.4,
+      stream: false,
+    }, {
+      timeoutSeconds: DEEPSEEK_GENERATION_TIMEOUT_SECONDS,
+      operationLabel: "生成阅读题",
+    }).then(function (payload) {
+      const content = responseContent(payload);
+      if (!content) throw new Error(`${providerLabel(config.provider)} 没有返回阅读题内容`);
+      const questions = parseQuestionsContent(content);
+      return {
+        questions,
+        words: selectedWords,
+        articleType,
+        questionCount: questions.length,
+        provider: config.provider,
+        providerLabel: providerLabel(config.provider),
+        model: config.model,
+      };
+    });
   }
 
   function generateArticle(settings, words, options) {
@@ -334,15 +522,12 @@ var __MN_DEEPSEEK_API_GLOBAL__ = (function () {
     const readingOptions = options && typeof options === "object" ? options : {};
     const articleType = ["cet4", "cet6", "postgraduate1", "postgraduate2"].indexOf(readingOptions.articleType) >= 0
       ? readingOptions.articleType
-      : "cet4";
+      : "postgraduate2";
     const length = ["short", "medium", "long"].indexOf(readingOptions.length) >= 0
       ? readingOptions.length
       : "medium";
     const includeTranslation = readingOptions.includeTranslation !== false;
     const wordText = selectedWords.map(function (word) { return word.spelling; }).join(", ");
-    const translationInstruction = includeTranslation
-      ? "请同时给出准确、自然的中文翻译。"
-      : "不要输出中文翻译，只输出英文文章。";
     const prompt = [
       "请根据以下要求生成一篇英语考试阅读文章。",
       `考试类型：${articleTypeText(articleType)}。`,
@@ -354,11 +539,11 @@ var __MN_DEEPSEEK_API_GLOBAL__ = (function () {
       "不要直接列出单词，不要解释单词含义，不要提及目标单词、单词列表或生成过程。",
       articleTypeGuidance(articleType),
       includeTranslation
-        ? "请提供忠实、自然的中文翻译，并与英文文章内容保持对应。"
-        : "不要输出中文翻译，只填写空字符串。",
+        ? "请将文章分成自然的多个段落，并为每个英文段落提供忠实、自然且一一对应的中文翻译。"
+        : "请将文章分成自然的多个段落，每个段落的 translation 字段填写空字符串。",
       "生成前请自行检查每个目标单词是否已经在文章中正确使用，但不要输出检查过程。",
       "必须只输出以下 JSON，不要使用 Markdown 代码块，不要添加任何额外说明：",
-      '{"article":"英文文章内容","translation":"中文翻译内容"}',
+      '{"paragraphs":[{"english":"英文第一段","translation":"第一段中文翻译"},{"english":"英文第二段","translation":"第二段中文翻译"}]}',
     ].join("\n");
 
     return requestJSON(config, "/chat/completions", "POST", {
@@ -372,6 +557,9 @@ var __MN_DEEPSEEK_API_GLOBAL__ = (function () {
       ],
       temperature: 0.7,
       stream: false,
+    }, {
+      timeoutSeconds: DEEPSEEK_GENERATION_TIMEOUT_SECONDS,
+      operationLabel: "生成文章",
     }).then(function (payload) {
       const content = responseContent(payload);
       if (!content) throw new Error("DeepSeek 没有返回文章内容");
@@ -380,6 +568,7 @@ var __MN_DEEPSEEK_API_GLOBAL__ = (function () {
       return {
         article: parsed.article,
         translation: parsed.translation,
+        paragraphs: parsed.paragraphs,
         words: selectedWords,
         articleType,
         length,
@@ -401,5 +590,7 @@ var __MN_DEEPSEEK_API_GLOBAL__ = (function () {
     normalizeSettings,
     testConnection,
     generateArticle,
+    generateQuestions,
+    parseQuestionsContent,
   };
 })();

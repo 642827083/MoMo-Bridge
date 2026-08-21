@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const source = await readFile(new URL("../src/MomoApi.js", import.meta.url), "utf8");
+const source = (await readFile(new URL("../src/MomoApi.js", import.meta.url), "utf8"))
+  .replace(/\r\n/g, "\n");
 const deepSeekSource = await readFile(new URL("../src/DeepSeekApi.js", import.meta.url), "utf8");
 const readingHistorySource = await readFile(new URL("../src/MomoReadingHistory.js", import.meta.url), "utf8");
 const bridgeSource = await readFile(new URL("../src/WebBridgeCommands.js", import.meta.url), "utf8");
@@ -145,8 +146,12 @@ test("DeepSeek API uses native HTTPS requests and keeps AI settings local", () =
   assert.match(deepSeekSource, /deepseek-v4-flash/);
   assert.match(deepSeekSource, /NSMutableURLRequest\.requestWithURL/);
   assert.match(deepSeekSource, /request\.setHTTPMethod\(method\)/);
-  assert.match(deepSeekSource, /DEEPSEEK_REQUEST_TIMEOUT_SECONDS = 90/);
-  assert.match(deepSeekSource, /request\.setTimeoutInterval\(DEEPSEEK_REQUEST_TIMEOUT_SECONDS\)/);
+  assert.match(deepSeekSource, /DEEPSEEK_TEST_TIMEOUT_SECONDS = 30/);
+  assert.match(deepSeekSource, /DEEPSEEK_GENERATION_TIMEOUT_SECONDS = 180/);
+  assert.match(deepSeekSource, /request\.setTimeoutInterval\(timeoutSeconds\)/);
+  assert.match(deepSeekSource, /operationLabel: "生成文章"/);
+  assert.match(deepSeekSource, /operationLabel: "生成阅读题"/);
+  assert.match(deepSeekSource, /operationLabel: "测试连接"/);
   assert.match(deepSeekSource, /request\.setHTTPBody\(NSJSONSerialization\.dataWithJSONObjectOptions\(body, 0\)\)/);
   assert.match(deepSeekSource, /Authorization/);
   assert.match(deepSeekSource, /requestJSON\(config, "\/chat\/completions", "POST"/);
@@ -187,14 +192,34 @@ test("今日阅读读取已背诵单词并保存文章历史", () => {
   assert.match(deepSeekSource, /articleTypeText/);
   assert.match(deepSeekSource, /articleLengthText/);
   assert.match(deepSeekSource, /generateArticle/);
+  assert.match(deepSeekSource, /articleType\) >= 0[\s\S]*: "postgraduate2"/);
+  assert.match(deepSeekSource, /normalizeArticleParagraphs/);
+  assert.match(deepSeekSource, /\{"paragraphs":\[\{"english"/);
   assert.match(deepSeekSource, /temperature: 0\.7/);
   assert.match(readingHistorySource, /reading-history\.json/);
   assert.match(readingHistorySource, /recordArticle/);
+  assert.match(readingHistorySource, /safeParagraphs/);
+  assert.match(readingHistorySource, /paragraphs,/);
   assert.doesNotMatch(readingHistorySource, /apiKey|token/i);
   assert.match(bridgeSource, /function getTodayFinishedWords\(context, payload\)/);
   assert.match(bridgeSource, /function listAiReadingHistory\(\)/);
   assert.match(bridgeSource, /function generateTodayReading\(context, payload\)/);
   assert.match(bridgeSource, /recordArticle\(input, result\)/);
+});
+
+test("AI 阅读支持按考试类型生成并保存阅读理解题", () => {
+  assert.match(deepSeekSource, /function parseQuestionsContent\(content\)/);
+  assert.match(deepSeekSource, /function questionTypeGuidance\(articleType\)/);
+  assert.match(deepSeekSource, /function generateQuestions\(settings, article, words, options\)/);
+  assert.match(deepSeekSource, /题目数量：\$\{questionCount\} 道/);
+  assert.match(deepSeekSource, /temperature: 0\.4/);
+  assert.match(deepSeekSource, /generateQuestions,/);
+  assert.match(readingHistorySource, /function safeQuestion\(value\)/);
+  assert.match(readingHistorySource, /function recordQuestions\(historyId, questions\)/);
+  assert.match(readingHistorySource, /阅读题数量应为 3 至 5 道/);
+  assert.match(bridgeSource, /function generateReadingQuestions\(context, payload\)/);
+  assert.match(bridgeSource, /recordQuestions\(/);
+  assert.match(bridgeSource, /generateReadingQuestions,/);
 });
 
 test("Web bridge does not expose a standalone Momo connection test", () => {

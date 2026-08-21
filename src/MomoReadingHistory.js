@@ -72,11 +72,56 @@ var __MN_MOMO_READING_HISTORY_GLOBAL__ = (function () {
     return result;
   }
 
+  function safeQuestion(value) {
+    if (!value || typeof value !== "object") return null;
+    const question = String(valueForKey(value, "question") || "").trim();
+    const sourceOptions = valueForKey(value, "options") || {};
+    const options = {};
+    ["A", "B", "C", "D"].forEach(function (letter) {
+      const option = valueForKey(sourceOptions, letter) || valueForKey(sourceOptions, letter.toLowerCase());
+      options[letter] = typeof option === "string" ? option.trim() : "";
+    });
+    const answer = String(valueForKey(value, "answer") || "").trim().toUpperCase();
+    const explanation = String(valueForKey(value, "explanation") || "").trim();
+    if (!question || !explanation || !/^[ABCD]$/.test(answer)) return null;
+    if (["A", "B", "C", "D"].some(function (letter) { return !options[letter]; })) return null;
+    return { question, options, answer, explanation };
+  }
+
+  function safeQuestions(values) {
+    return arrayItems(values).map(safeQuestion).filter(Boolean).slice(0, 5);
+  }
+
+  function safeParagraph(value) {
+    if (typeof value === "string") {
+      const english = value.trim();
+      return english ? { english, translation: "" } : null;
+    }
+    if (!value || typeof value !== "object") return null;
+    const english = String(
+      valueForKey(value, "english") || valueForKey(value, "article") || valueForKey(value, "text") || "",
+    ).trim();
+    if (!english) return null;
+    return {
+      english,
+      translation: String(valueForKey(value, "translation") || valueForKey(value, "chinese") || "").trim(),
+    };
+  }
+
+  function safeParagraphs(values) {
+    return arrayItems(values).map(safeParagraph).filter(Boolean);
+  }
+
   function safeEntry(value) {
     if (!value || typeof value !== "object") return null;
-    const article = String(valueForKey(value, "article") || "").trim();
+    const paragraphs = safeParagraphs(valueForKey(value, "paragraphs"));
+    const article = String(valueForKey(value, "article") || "").trim() || paragraphs
+      .map(function (paragraph) { return paragraph.english; })
+      .join("\n\n")
+      .trim();
     const words = safeWords(valueForKey(value, "words"));
     if (!article || words.length === 0) return null;
+    const rawTranslation = String(valueForKey(value, "translation") || "").trim();
     return {
       id: String(valueForKey(value, "id") || ""),
       createdAt: String(valueForKey(value, "createdAt") || ""),
@@ -85,7 +130,13 @@ var __MN_MOMO_READING_HISTORY_GLOBAL__ = (function () {
       includeTranslation: valueForKey(value, "includeTranslation") !== false,
       words,
       article,
-      translation: String(valueForKey(value, "translation") || "").trim(),
+      translation: rawTranslation || paragraphs
+        .map(function (paragraph) { return paragraph.translation; })
+        .filter(Boolean)
+        .join("\n\n")
+        .trim(),
+      paragraphs,
+      questions: safeQuestions(valueForKey(value, "questions")),
     };
   }
 
@@ -137,6 +188,7 @@ var __MN_MOMO_READING_HISTORY_GLOBAL__ = (function () {
       words,
       article: valueForKey(source, "article"),
       translation: valueForKey(source, "translation"),
+      paragraphs: valueForKey(source, "paragraphs"),
     });
     if (!entry) throw new Error("文章内容无效，无法保存阅读历史");
     const document = readDocument();
@@ -146,6 +198,25 @@ var __MN_MOMO_READING_HISTORY_GLOBAL__ = (function () {
     return entry;
   }
 
+  function recordQuestions(historyId, questions) {
+    const targetId = String(historyId || "").trim();
+    if (!targetId) throw new Error("缺少文章历史 ID，无法保存阅读题");
+    const document = readDocument();
+    const index = document.entries.findIndex(function (entry) {
+      return entry && entry.id === targetId;
+    });
+    if (index < 0) throw new Error("未找到对应的文章历史，无法保存阅读题");
+    const normalizedQuestions = safeQuestions(questions);
+    if (normalizedQuestions.length < 3 || normalizedQuestions.length > 5) {
+      throw new Error("阅读题数量应为 3 至 5 道");
+    }
+    document.entries[index] = Object.assign({}, document.entries[index], {
+      questions: normalizedQuestions,
+    });
+    writeDocument(document);
+    return document.entries[index];
+  }
+
   function listHistory() {
     return readDocument().entries;
   }
@@ -153,5 +224,6 @@ var __MN_MOMO_READING_HISTORY_GLOBAL__ = (function () {
   return {
     listHistory,
     recordArticle,
+    recordQuestions,
   };
 })();

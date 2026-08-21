@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { collectLemmas } from "./domain/lemma.mjs";
 import { collectCardImports } from "./domain/examples.mjs";
 import {
@@ -11,6 +11,8 @@ import MNBridge from "./lib/mnBridge";
 const TOKEN_HELP_URL = "https://open.maimemo.com/#/";
 const MAX_EXAMPLES_PER_IMPORT = 10;
 const MAX_READING_WORDS = 30;
+const READING_QUESTION_COUNT = 4;
+const DEFAULT_READING_ARTICLE_TYPE = "postgraduate2";
 
 const READING_ARTICLE_TYPES = [
   { value: "cet4", label: "四级" },
@@ -119,6 +121,113 @@ function formatRemainingTime(seconds) {
   return remainder ? `约 ${minutes} 分 ${remainder} 秒` : `约 ${minutes} 分钟`;
 }
 
+function readingParagraphs(entry) {
+  return (Array.isArray(entry?.paragraphs) ? entry.paragraphs : [])
+    .map((paragraph) => ({
+      english: typeof paragraph?.english === "string" ? paragraph.english.trim() : "",
+      translation: typeof paragraph?.translation === "string" ? paragraph.translation.trim() : "",
+    }))
+    .filter((paragraph) => paragraph.english);
+}
+
+function readingEnglishText(entry) {
+  const paragraphs = readingParagraphs(entry);
+  return paragraphs.length
+    ? paragraphs.map((paragraph) => paragraph.english).join("\n\n")
+    : typeof entry?.article === "string" ? entry.article : "";
+}
+
+function readingBilingualText(entry) {
+  const paragraphs = readingParagraphs(entry);
+  if (paragraphs.length) {
+    return paragraphs.map((paragraph) => (
+      paragraph.translation ? `${paragraph.english}\n${paragraph.translation}` : paragraph.english
+    )).join("\n\n");
+  }
+  return entry?.translation ? `${entry.article}\n\n${entry.translation}` : entry?.article || "";
+}
+
+function escapeReadingRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function readingWordForms(value) {
+  const word = typeof value === "string" ? value.trim().toLowerCase() : "";
+  if (!word) return [];
+  const forms = new Set([word]);
+  if (!/^[a-z]+$/.test(word)) return Array.from(forms);
+  if (word.endsWith("y") && word.length > 2) {
+    forms.add(`${word.slice(0, -1)}ies`);
+    forms.add(`${word.slice(0, -1)}ied`);
+  }
+  if (word.endsWith("e")) {
+    forms.add(`${word}s`);
+    forms.add(`${word}d`);
+    forms.add(`${word.slice(0, -1)}ing`);
+  } else {
+    forms.add(/(?:s|x|z|ch|sh|o)$/.test(word) ? `${word}es` : `${word}s`);
+    forms.add(`${word}ed`);
+    forms.add(`${word}ing`);
+  }
+  return Array.from(forms);
+}
+
+function readingWordTerms(words) {
+  const terms = new Set();
+  for (const word of Array.isArray(words) ? words : []) {
+    const spelling = typeof word === "string" ? word : word?.spelling;
+    for (const form of readingWordForms(spelling)) terms.add(form);
+  }
+  return Array.from(terms).sort((first, second) => second.length - first.length);
+}
+
+function readingWordAppears(text, spelling) {
+  const source = String(text || "");
+  return readingWordForms(spelling).some((form) => (
+    new RegExp(`\\b${escapeReadingRegExp(form)}\\b`, "i").test(source)
+  ));
+}
+
+function readingWordSummary(entry) {
+  const words = Array.isArray(entry?.words) ? entry.words : [];
+  const missing = words.filter((word) => !readingWordAppears(readingEnglishText(entry), word?.spelling));
+  return {
+    total: words.length,
+    used: Math.max(0, words.length - missing.length),
+    missing,
+  };
+}
+
+function renderHighlightedReadingText(text, words, enabled) {
+  const source = String(text || "");
+  if (!enabled) return source;
+  const terms = readingWordTerms(words);
+  if (!source || terms.length === 0) return source;
+  const termSet = new Set(terms);
+  const matcher = new RegExp(`\\b(${terms.map(escapeReadingRegExp).join("|")})\\b`, "gi");
+  return source.split(matcher).map((segment, index) => {
+    if (termSet.has(String(segment).toLowerCase())) {
+      return <mark className="reading-word-highlight" key={`${segment}-${index}`}>{segment}</mark>;
+    }
+    return segment;
+  });
+}
+
+function formatReadingQuestions(questions) {
+  return (Array.isArray(questions) ? questions : []).map((item, index) => {
+    const options = item && item.options && typeof item.options === "object" ? item.options : {};
+    return [
+      `${index + 1}. ${item?.question || ""}`,
+      `A. ${options.A || ""}`,
+      `B. ${options.B || ""}`,
+      `C. ${options.C || ""}`,
+      `D. ${options.D || ""}`,
+      `答案：${item?.answer || ""}`,
+      `解析：${item?.explanation || ""}`,
+    ].join("\n");
+  }).join("\n\n");
+}
+
 function App() {
   const [token, setToken] = useState("");
   const [bookId, setBookId] = useState("");
@@ -149,12 +258,17 @@ function App() {
   const [todayItems, setTodayItems] = useState([]);
   const [readingHistory, setReadingHistory] = useState([]);
   const [readingSelection, setReadingSelection] = useState([]);
-  const [readingArticleType, setReadingArticleType] = useState("cet4");
+  const [readingArticleType, setReadingArticleType] = useState(DEFAULT_READING_ARTICLE_TYPE);
   const [readingLength, setReadingLength] = useState("medium");
   const [readingTranslation, setReadingTranslation] = useState(true);
+  const [readingQuestionsEnabled, setReadingQuestionsEnabled] = useState(false);
   const [currentArticle, setCurrentArticle] = useState(null);
   const [readingLoading, setReadingLoading] = useState(false);
   const [readingBusy, setReadingBusy] = useState(false);
+  const [readingQuestionsBusy, setReadingQuestionsBusy] = useState(false);
+  const [readingQuestionsTargetId, setReadingQuestionsTargetId] = useState("");
+  const [highlightReadingWords, setHighlightReadingWords] = useState(true);
+  const [historyHighlightState, setHistoryHighlightState] = useState({});
   const [readingMessage, setReadingMessage] = useState("");
   const [readingMessageKind, setReadingMessageKind] = useState("info");
   const [estimateDeadline, setEstimateDeadline] = useState(0);
@@ -184,6 +298,11 @@ function App() {
     [generatedTodayKeys, todayItems],
   );
   const pendingTodayCount = Math.max(0, todayItems.length - generatedTodayCount);
+  const currentArticleWordSummary = useMemo(
+    () => readingWordSummary(currentArticle),
+    [currentArticle],
+  );
+  const readingGenerationRef = useRef(0);
 
   useEffect(() => {
     if (!busy || !estimateDeadline) return undefined;
@@ -349,7 +468,32 @@ function App() {
     }
   }
 
-  async function requestReadingArticle(words) {
+  async function requestReadingQuestionsForArticle(article, requestId) {
+    const historyId = article?.historyEntry?.id || article?.id || "";
+    if (!historyId) throw new Error("未找到文章历史记录，无法保存阅读题");
+    const payload = await MNBridge.send("generateReadingQuestions", {
+      settings: {
+        provider: aiProvider,
+        apiKey: aiApiKey,
+        baseUrl: aiBaseUrl,
+        model: aiModel,
+      },
+      historyId,
+      article: article.article,
+      words: article.words,
+      articleType: article.articleType,
+      questionCount: READING_QUESTION_COUNT,
+    });
+    if (requestId !== undefined && requestId !== readingGenerationRef.current) {
+      return { cancelled: true };
+    }
+    return {
+      questions: Array.isArray(payload.questions) ? payload.questions : [],
+      historyEntry: payload.historyEntry || article.historyEntry,
+    };
+  }
+
+  async function requestReadingArticle(words, options = {}) {
     const selectedWords = Array.isArray(words) ? words : [];
     if (selectedWords.length === 0) {
       setReadingMessageKind("warning");
@@ -362,6 +506,16 @@ function App() {
       setActivePage("ai");
       return null;
     }
+    const articleType = options.articleType || readingArticleType;
+    const length = options.length || readingLength;
+    const includeTranslation = options.includeTranslation === undefined
+      ? readingTranslation
+      : options.includeTranslation !== false;
+    const shouldGenerateQuestions = options.generateQuestions === undefined
+      ? readingQuestionsEnabled
+      : options.generateQuestions === true;
+    const requestId = readingGenerationRef.current + 1;
+    readingGenerationRef.current = requestId;
     try {
       setReadingBusy(true);
       setReadingMessage("");
@@ -373,25 +527,71 @@ function App() {
           model: aiModel,
         },
         words: selectedWords,
-        articleType: readingArticleType,
-        length: readingLength,
-        includeTranslation: readingTranslation,
+        articleType,
+        length,
+        includeTranslation,
       });
-      setCurrentArticle(payload);
-      if (payload.historyEntry) {
-        setReadingHistory((current) => [payload.historyEntry, ...current]);
+      if (requestId !== readingGenerationRef.current) return null;
+
+      let article = payload;
+      let questionError = null;
+      if (shouldGenerateQuestions) {
+        setReadingQuestionsBusy(true);
+        setReadingMessageKind("info");
+        setReadingMessage("文章已生成，正在生成阅读题…");
+        try {
+          const questionPayload = await requestReadingQuestionsForArticle(payload, requestId);
+          if (questionPayload.cancelled) return null;
+          article = {
+            ...payload,
+            questions: questionPayload.questions,
+            historyEntry: questionPayload.historyEntry,
+          };
+        } catch (error) {
+          questionError = error;
+        } finally {
+          if (requestId === readingGenerationRef.current) setReadingQuestionsBusy(false);
+        }
+      }
+
+      if (requestId !== readingGenerationRef.current) return null;
+      setCurrentArticle(article);
+      if (article.historyEntry) {
+        setReadingHistory((current) => {
+          const withoutCurrent = current.filter((entry) => entry.id !== article.historyEntry.id);
+          return [article.historyEntry, ...withoutCurrent];
+        });
       }
       setReadingSelection([]);
-      setReadingMessageKind("success");
-      setReadingMessage(`文章生成成功，本次使用 ${selectedWords.length} 个单词`);
-      return payload;
+      if (questionError) {
+        setReadingMessageKind("warning");
+        setReadingMessage(`文章生成成功，但阅读题生成失败：${questionError.message || "请稍后重试"}`);
+      } else {
+        setReadingMessageKind("success");
+        setReadingMessage(
+          shouldGenerateQuestions
+            ? `文章和阅读题生成成功，本次使用 ${selectedWords.length} 个单词`
+            : `文章生成成功，本次使用 ${selectedWords.length} 个单词`,
+        );
+      }
+      return article;
     } catch (error) {
+      if (requestId !== readingGenerationRef.current) return null;
       setReadingMessageKind("error");
       setReadingMessage(error.message || "生成 AI 阅读文章失败");
       return null;
     } finally {
-      setReadingBusy(false);
+      if (requestId === readingGenerationRef.current) setReadingBusy(false);
     }
+  }
+
+  function pauseReadingGeneration() {
+    if (!readingBusy) return;
+    readingGenerationRef.current += 1;
+    setReadingBusy(false);
+    setReadingQuestionsBusy(false);
+    setReadingMessageKind("warning");
+    setReadingMessage("已暂停本次生成，可以修改文章类型或长度后重新生成");
   }
 
   async function generateSelectedReading() {
@@ -413,11 +613,63 @@ function App() {
     await requestReadingArticle(currentArticle && currentArticle.words);
   }
 
-  async function copyReadingContent(includeTranslation) {
-    if (!currentArticle?.article) return;
-    const content = includeTranslation && currentArticle.translation
-      ? `${currentArticle.article}\n\n${currentArticle.translation}`
-      : currentArticle.article;
+  function readingArticleId(article) {
+    return String(article?.historyEntry?.id || article?.id || "");
+  }
+
+  async function regenerateHistoryReading(entry) {
+    if (!entry?.article) return;
+    await requestReadingArticle(entry.words, {
+      articleType: entry.articleType,
+      length: entry.length,
+      includeTranslation: entry.includeTranslation,
+      generateQuestions: Array.isArray(entry.questions) && entry.questions.length > 0,
+    });
+  }
+
+  async function generateReadingQuestionsForArticle(article) {
+    if (!article?.article) return;
+    if (!aiApiKey.trim()) {
+      setReadingMessageKind("error");
+      setReadingMessage(`请先在 AI 设置页面填写 ${aiProviderDefinition(aiProvider).label} API Key`);
+      setActivePage("ai");
+      return;
+    }
+    const targetId = readingArticleId(article);
+    try {
+      setReadingQuestionsBusy(true);
+      setReadingQuestionsTargetId(targetId);
+      setReadingMessage("");
+      const payload = await requestReadingQuestionsForArticle(article);
+      const nextEntry = payload.historyEntry || { ...article, questions: payload.questions };
+      setCurrentArticle((current) => readingArticleId(current) === targetId ? {
+        ...current,
+        questions: payload.questions,
+        historyEntry: payload.historyEntry || current.historyEntry,
+      } : current);
+      setReadingHistory((current) => current.map((entry) => (
+        entry.id === targetId ? nextEntry : entry
+      )));
+      setReadingMessageKind("success");
+      setReadingMessage(`阅读题生成成功，共 ${payload.questions.length} 道`);
+    } catch (error) {
+      setReadingMessageKind("error");
+      setReadingMessage(error.message || "生成阅读题失败");
+    } finally {
+      setReadingQuestionsBusy(false);
+      setReadingQuestionsTargetId("");
+    }
+  }
+
+  async function generateReadingQuestions() {
+    await generateReadingQuestionsForArticle(currentArticle);
+  }
+
+  async function copyReadingContentForArticle(article, includeTranslation) {
+    if (!article?.article) return;
+    const content = includeTranslation
+      ? readingBilingualText(article)
+      : readingEnglishText(article);
     try {
       await navigator.clipboard.writeText(content);
       setReadingMessageKind("success");
@@ -426,6 +678,144 @@ function App() {
       setReadingMessageKind("error");
       setReadingMessage("无法复制文章");
     }
+  }
+
+  async function copyReadingContent(includeTranslation) {
+    await copyReadingContentForArticle(currentArticle, includeTranslation);
+  }
+
+  async function copyReadingQuestionsForArticle(article) {
+    const questions = article?.questions;
+    if (!Array.isArray(questions) || questions.length === 0) return;
+    try {
+      await navigator.clipboard.writeText(formatReadingQuestions(questions));
+      setReadingMessageKind("success");
+      setReadingMessage("阅读题已复制");
+    } catch (error) {
+      setReadingMessageKind("error");
+      setReadingMessage("无法复制阅读题");
+    }
+  }
+
+  async function copyReadingQuestions() {
+    await copyReadingQuestionsForArticle(currentArticle);
+  }
+
+  function renderReadingArticleActions(article, isHistory = false) {
+    const articleId = readingArticleId(article);
+    const hasTranslation = readingParagraphs(article).some((paragraph) => paragraph.translation)
+      || Boolean(article?.translation);
+    const hasQuestions = Array.isArray(article?.questions) && article.questions.length > 0;
+    const questionLoading = readingQuestionsBusy && readingQuestionsTargetId === articleId;
+    return (
+      <div className={`reading-article-actions${isHistory ? " reading-history-article-actions" : ""}`}>
+        <button
+          className="secondary-button reading-action-button"
+          type="button"
+          disabled={readingBusy || readingQuestionsBusy}
+          onClick={() => isHistory ? regenerateHistoryReading(article) : regenerateReading()}
+        >
+          重新生成文章
+        </button>
+        <button
+          className="secondary-button reading-action-button"
+          type="button"
+          disabled={readingBusy || readingQuestionsBusy}
+          onClick={() => isHistory ? generateReadingQuestionsForArticle(article) : generateReadingQuestions()}
+        >
+          {questionLoading ? "正在生成阅读题…" : hasQuestions ? "重新生成阅读题" : "生成阅读题"}
+        </button>
+        <button
+          className="secondary-button reading-action-button"
+          type="button"
+          onClick={() => isHistory ? copyReadingContentForArticle(article, false) : copyReadingContent(false)}
+        >
+          复制英文
+        </button>
+        {hasTranslation ? (
+          <button
+            className="secondary-button reading-action-button"
+            type="button"
+            onClick={() => isHistory ? copyReadingContentForArticle(article, true) : copyReadingContent(true)}
+          >
+            复制中英对照
+          </button>
+        ) : null}
+        {hasQuestions ? (
+          <button
+            className="secondary-button reading-action-button"
+            type="button"
+            onClick={() => isHistory ? copyReadingQuestionsForArticle(article) : copyReadingQuestions()}
+          >
+            复制阅读题
+          </button>
+        ) : null}
+      </div>
+    );
+  }
+
+  function renderCurrentReadingArticle() {
+    if (!currentArticle) return null;
+    return (
+      <article className="reading-article">
+        <div className="reading-article-heading">
+          <div>
+            <p className="eyebrow">本次 AI 阅读文章</p>
+            <h3>{readingArticleTypeLabel(currentArticle.articleType)}</h3>
+          </div>
+          <div className="reading-article-heading-actions">
+            <span>{currentArticle.words?.length || 0} 个单词</span>
+            <label
+              className="reading-highlight-option reading-heading-highlight-option"
+              title="标记今日词汇"
+            >
+              <input
+                type="checkbox"
+                checked={highlightReadingWords}
+                onChange={(event) => setHighlightReadingWords(event.target.checked)}
+              />
+              <span>标记词汇</span>
+            </label>
+          </div>
+        </div>
+        {currentArticleWordSummary.total ? (
+          <p className="reading-vocabulary-summary">
+            文章中找到 {currentArticleWordSummary.used}/{currentArticleWordSummary.total} 个本次词汇
+            {currentArticleWordSummary.missing.length ? (
+              <span>；未在文章中发现：{currentArticleWordSummary.missing.map((word) => word.spelling).join("、")}</span>
+            ) : null}
+          </p>
+        ) : null}
+        {currentArticle.paragraphs?.length ? (
+          <div className="reading-article-paragraphs">
+            {currentArticle.paragraphs.map((paragraph, index) => (
+              <div className="reading-article-paragraph" key={`${paragraph.english}-${index}`}>
+                <div className="reading-article-body">
+                  {renderHighlightedReadingText(paragraph.english, currentArticle.words, highlightReadingWords)}
+                </div>
+                {paragraph.translation ? (
+                  <details className="reading-paragraph-translation">
+                    <summary>显示本段翻译</summary>
+                    <p>{paragraph.translation}</p>
+                  </details>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="reading-article-body">
+            {renderHighlightedReadingText(currentArticle.article, currentArticle.words, highlightReadingWords)}
+          </div>
+        )}
+        {!currentArticle.paragraphs?.length && currentArticle.translation ? (
+          <details className="reading-paragraph-translation">
+            <summary>显示全文翻译</summary>
+            <p>{currentArticle.translation}</p>
+          </details>
+        ) : null}
+        {renderReadingArticleActions(currentArticle)}
+      </article>
+    );
   }
 
   function openTokenHelp(event) {
@@ -1043,14 +1433,27 @@ function App() {
                   {READING_LENGTHS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
                 </select>
               </div>
-              <label className="reading-translation-option">
-                <input
-                  type="checkbox"
-                  checked={readingTranslation}
-                  onChange={(event) => setReadingTranslation(event.target.checked)}
-                />
-                <span>生成中文翻译</span>
-              </label>
+              <div className="reading-reading-options">
+                <div className="reading-translation-option">
+                  <input
+                    id="reading-translation"
+                    type="checkbox"
+                    checked={readingTranslation}
+                    onChange={(event) => setReadingTranslation(event.target.checked)}
+                  />
+                  <label htmlFor="reading-translation">生成中文翻译</label>
+                </div>
+                <div className="reading-translation-option">
+                  <input
+                    id="reading-questions"
+                    type="checkbox"
+                    checked={readingQuestionsEnabled}
+                    onChange={(event) => setReadingQuestionsEnabled(event.target.checked)}
+                  />
+                  <label htmlFor="reading-questions">同时生成阅读题</label>
+                </div>
+                <p className="reading-option-hint">会额外调用一次 AI，生成 3～5 道题</p>
+              </div>
             </div>
 
             <div className="reading-selection-panel">
@@ -1079,51 +1482,56 @@ function App() {
               <button
                 className="secondary-button reading-action-button"
                 type="button"
-                disabled={readingLoading || readingBusy}
+                disabled={readingLoading || readingBusy || readingQuestionsBusy}
                 onClick={() => loadTodayReading(true)}
               >
                 {readingLoading ? "读取中…" : "重新读取"}
               </button>
               <button
-                className="primary-action reading-action-button"
+                className={readingBusy ? "secondary-button reading-action-button" : "primary-action reading-action-button"}
                 type="button"
-                disabled={readingBusy || readingLoading || readingSelection.length === 0}
-                onClick={currentArticle ? generateNextReading : generateSelectedReading}
+                disabled={readingLoading || (!readingBusy && (readingQuestionsBusy || readingSelection.length === 0))}
+                onClick={readingBusy ? pauseReadingGeneration : currentArticle ? generateNextReading : generateSelectedReading}
               >
-                {readingBusy ? "生成中…" : currentArticle ? "生成下一篇" : "生成 AI 阅读"}
+                {readingBusy ? "暂停生成" : currentArticle ? "生成下一篇" : "生成 AI 阅读"}
               </button>
             </div>
             {readingMessage ? <p className={`reading-message is-${readingMessageKind}`} role="status">{readingMessage}</p> : null}
 
-            {currentArticle ? (
-              <article className="reading-article">
-                <div className="reading-article-heading">
-                  <div>
-                    <p className="eyebrow">本次 AI 阅读文章</p>
-                    <h3>{readingArticleTypeLabel(currentArticle.articleType)}</h3>
-                  </div>
-                  <div className="reading-article-heading-actions">
-                    <span>{currentArticle.words?.length || 0} 个单词</span>
-                    <button className="secondary-button reading-action-button" type="button" disabled={readingBusy} onClick={regenerateReading}>
-                      {readingBusy ? "生成中…" : "重新生成文章"}
-                    </button>
-                  </div>
-                </div>
-                <div className="reading-article-body">{currentArticle.article}</div>
-                {currentArticle.translation ? (
-                  <div className="reading-translation"><strong>中文翻译</strong><p>{currentArticle.translation}</p></div>
-                ) : null}
-                <div className="reading-copy-actions">
-                  <button className="secondary-button" type="button" onClick={() => copyReadingContent(false)}>复制英文</button>
-                  {currentArticle.translation ? (
-                    <button className="secondary-button" type="button" onClick={() => copyReadingContent(true)}>复制中英对照</button>
-                  ) : null}
-                </div>
-              </article>
-            ) : null}
           </section>
 
           <section className="reading-history-card" aria-label="阅读历史">
+            {renderCurrentReadingArticle()}
+            {currentArticle?.questions?.length ? (
+              <section className="reading-questions" aria-label="阅读理解题">
+                <div className="reading-questions-heading">
+                  <div>
+                    <p className="eyebrow">文章练习</p>
+                    <strong>阅读理解题</strong>
+                  </div>
+                  <span>{currentArticle.questions.length} 道</span>
+                </div>
+                <div className="reading-question-list">
+                  {currentArticle.questions.map((item, index) => (
+                    <div className="reading-question-item" key={`${item.question}-${index}`}>
+                      <p className="reading-question-title"><strong>{index + 1}.</strong> {item.question}</p>
+                      <div className="reading-question-options">
+                        {["A", "B", "C", "D"].map((letter) => (
+                          <div key={letter}><strong>{letter}.</strong> {item.options?.[letter]}</div>
+                        ))}
+                      </div>
+                      <details className="reading-answer-details">
+                        <summary>查看答案与解析</summary>
+                        <div className="reading-answer-content">
+                          <p><strong>答案：{item.answer}</strong></p>
+                          <p>解析：{item.explanation}</p>
+                        </div>
+                      </details>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ) : null}
             <div className="history-heading">
               <div>
                 <p className="eyebrow">本机记录</p>
@@ -1139,13 +1547,89 @@ function App() {
                     <summary>
                       <span>
                         <strong>{readingArticleTypeLabel(entry.articleType)}</strong>
-                        <small>{formatHistoryTime(entry.createdAt)} · {entry.words?.length || 0} 个单词</small>
+                        <small>
+                          {formatHistoryTime(entry.createdAt)} · {entry.words?.length || 0} 个单词
+                          {entry.questions?.length ? ` · ${entry.questions.length} 道题` : ""}
+                        </small>
                       </span>
-                      <span className="history-status">已生成</span>
+                      <span className="reading-history-summary-actions">
+                        <label
+                          className="reading-highlight-option reading-heading-highlight-option"
+                          title="标记本篇词汇"
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={historyHighlightState[entry.id] !== false}
+                            onChange={(event) => setHistoryHighlightState((current) => ({
+                              ...current,
+                              [entry.id]: event.target.checked,
+                            }))}
+                          />
+                          <span>标记词汇</span>
+                        </label>
+                        <span className="history-status">已生成</span>
+                      </span>
                     </summary>
                     <div className="reading-history-content">
-                      <p>{entry.article}</p>
-                      {entry.translation ? <small>{entry.translation}</small> : null}
+                      {readingWordSummary(entry).total ? (
+                        <p className="reading-vocabulary-summary">
+                          文章中找到 {readingWordSummary(entry).used}/{readingWordSummary(entry).total} 个本篇词汇
+                          {readingWordSummary(entry).missing.length ? (
+                            <span>；未在文章中发现：{readingWordSummary(entry).missing.map((word) => word.spelling).join("、")}</span>
+                          ) : null}
+                        </p>
+                      ) : null}
+                      {entry.paragraphs?.length ? (
+                        <div className="reading-history-paragraphs">
+                          {entry.paragraphs.map((paragraph, index) => (
+                            <div className="reading-history-paragraph" key={`${paragraph.english}-${index}`}>
+                              <p>{renderHighlightedReadingText(
+                                paragraph.english,
+                                entry.words,
+                                historyHighlightState[entry.id] !== false,
+                              )}</p>
+                              {paragraph.translation ? (
+                                <details className="reading-history-translation">
+                                  <summary>显示本段翻译</summary>
+                                  <small>{paragraph.translation}</small>
+                                </details>
+                              ) : null}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p>{renderHighlightedReadingText(
+                          entry.article,
+                          entry.words,
+                          historyHighlightState[entry.id] !== false,
+                        )}</p>
+                      )}
+                      {!entry.paragraphs?.length && entry.translation ? (
+                        <details className="reading-history-translation">
+                          <summary>显示全文翻译</summary>
+                          <small>{entry.translation}</small>
+                        </details>
+                      ) : null}
+                      {renderReadingArticleActions(entry, true)}
+                      {entry.questions?.length ? (
+                        <div className="reading-history-questions">
+                          <strong>阅读理解题</strong>
+                          {entry.questions.map((item, index) => (
+                            <details className="reading-history-question" key={`${item.question}-${index}`}>
+                              <summary>{index + 1}. {item.question}</summary>
+                              <div className="reading-history-question-body">
+                                <p>A. {item.options?.A}</p>
+                                <p>B. {item.options?.B}</p>
+                                <p>C. {item.options?.C}</p>
+                                <p>D. {item.options?.D}</p>
+                                <p><strong>答案：{item.answer}</strong></p>
+                                <p>解析：{item.explanation}</p>
+                              </div>
+                            </details>
+                          ))}
+                        </div>
+                      ) : null}
                     </div>
                   </details>
                 ))}

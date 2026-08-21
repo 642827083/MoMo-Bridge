@@ -78,14 +78,68 @@ test("AI 阅读页面只展示已背诵数据并按最多三十个单词生成",
   assert.match(source, /生成 AI 阅读/);
   assert.match(source, /生成下一篇/);
   assert.match(source, /重新生成文章/);
+  assert.match(source, /暂停生成/);
+  assert.match(source, /pauseReadingGeneration/);
+  assert.match(source, /readingQuestionsEnabled/);
+  assert.match(source, /同时生成阅读题/);
+  assert.match(source, /会额外调用一次 AI/);
+  assert.match(source, /id="reading-translation"/);
+  assert.match(source, /id="reading-questions"/);
+  assert.match(source, /标记词汇/);
+  assert.match(source, /title="标记今日词汇"/);
+  assert.match(source, /title="标记本篇词汇"/);
+  assert.match(source, /未在文章中发现/);
+  assert.match(source, /显示本段翻译/);
+  assert.match(source, /显示全文翻译/);
+  assert.match(source, /DEFAULT_READING_ARTICLE_TYPE = "postgraduate2"/);
   assert.match(source, /复制英文/);
   assert.match(source, /复制中英对照/);
   assert.match(source, /已生成阅读/);
   assert.match(source, /待生成阅读/);
   assert.match(styleSource, /\.reading-layout/);
   assert.match(styleSource, /\.reading-article-body/);
+  assert.match(styleSource, /\.reading-controls\s*\{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/s);
+  assert.match(styleSource, /\.reading-reading-options\s*\{[^}]*grid-column:\s*1 \/ -1/s);
+  assert.match(source, /function renderCurrentReadingArticle\(\)/);
+  assert.match(source, /renderCurrentReadingArticle\(\)/);
+  assert.doesNotMatch(source, /reading-generation-action/);
+  assert.doesNotMatch(source, /reading-pause-button/);
+  assert.match(styleSource, /\.reading-word-highlight/);
+  assert.match(styleSource, /\.reading-heading-highlight-option/);
+  assert.match(styleSource, /\.reading-history-summary-actions/);
+  assert.match(styleSource, /\.reading-actions \.reading-action-button\s*\{[^}]*width:\s*100%/s);
+  assert.match(styleSource, /\.reading-article-actions\s*\{[^}]*grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\)/s);
+  assert.match(styleSource, /\.reading-article-heading\s*\{[^}]*align-items:\s*flex-end/s);
+  assert.ok(
+    source.indexOf('<section className="reading-questions"')
+      > source.indexOf('<section className="reading-history-card"'),
+    "阅读理解题应位于右侧栏的阅读历史之前",
+  );
+  assert.match(styleSource, /\.reading-paragraph-translation/);
+  assert.match(styleSource, /\.reading-history-translation/);
+  assert.match(styleSource, /\.reading-history-translation\s*\{[^}]*padding:\s*4px 8px;[^}]*line-height:\s*1\.35/s);
+  assert.match(styleSource, /\.reading-history-paragraph > p\s*\{[^}]*margin:\s*0;/s);
   assert.match(styleSource, /\.ai-actions button\s*{[^}]*width:\s*104px/s);
   assert.match(styleSource, /\.ai-actions \.primary-action\s*{[^}]*width:\s*104px/s);
+});
+
+test("AI 阅读支持按需生成、折叠查看和复制阅读理解题", () => {
+  assert.match(source, /const READING_QUESTION_COUNT = 4/);
+  assert.match(source, /const \[readingQuestionsBusy, setReadingQuestionsBusy\]/);
+  assert.match(source, /async function generateReadingQuestions\(\)/);
+  assert.match(source, /MNBridge\.send\("generateReadingQuestions"/);
+  assert.match(source, /生成阅读题/);
+  assert.match(source, /重新生成阅读题/);
+  assert.match(source, /复制阅读题/);
+  assert.match(source, /查看答案与解析/);
+  assert.match(source, /className="reading-questions"/);
+  assert.doesNotMatch(source, /reading-more-actions/);
+  assert.match(source, /手动生成阅读题|生成阅读题/);
+  assert.match(source, /entry\.questions\?\.length/);
+  assert.match(source, /renderReadingArticleActions\(entry, true\)/);
+  assert.match(source, /复制中英对照/);
+  assert.match(styleSource, /\.reading-question-item\s*\{/);
+  assert.match(styleSource, /\.reading-answer-details\s*\{/);
 });
 
 test("Token help link appears above the Token input", () => {
@@ -131,7 +185,7 @@ test("Import UI exposes independent word, example, and study checkboxes on one r
   assert.match(source, /const \[addExamples, setAddExamples\] = useState\(false\)/);
   assert.match(source, /const \[addStudy, setAddStudy\] = useState\(false\)/);
   assert.match(source, /const \[advanceStudy, setAdvanceStudy\] = useState\(false\)/);
-  assert.equal((source.match(/type="checkbox"/g) || []).length, 5);
+  assert.equal((source.match(/type="checkbox"/g) || []).length, 8);
   assert.match(source, /添加单词/);
   assert.match(source, /添加例句/);
   assert.match(source, /添加背诵/);
