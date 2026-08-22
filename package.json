@@ -1,6 +1,6 @@
 {
   "name": "momo-vocabulary-import",
-  "version": "2.4.4",
+  "version": "2.4.5",
   "private": true,
   "scripts": {
     "build": "node scripts/build-release.js --test",
@@ -26,5 +26,5 @@
   "mnRails": {
     "template": "web"
   },
-  "mnaddonFileName": "MoMo Import"
+  "mnaddonFileName": "MoMo Bridge"
 }

@@ -7,14 +7,20 @@ const styleSource = await readFile(new URL("../web/src/styles.css", import.meta.
 const panelSource = await readFile(new URL("../src/WebPanelController.js", import.meta.url), "utf8");
 const htmlSource = await readFile(new URL("../web/index.html", import.meta.url), "utf8");
 const webBuildSource = await readFile(new URL("../scripts/web-build.js", import.meta.url), "utf8");
+const addonManifest = JSON.parse(await readFile(new URL("../src/mnaddon.json", import.meta.url), "utf8"));
+const packageSource = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
 
 test("Panel uses the product name and keeps only the compact web subtitle", () => {
-  assert.match(panelSource, /controller\.titleLabel\.text = "MoMo Import"/);
+  assert.match(panelSource, /controller\.titleLabel\.text = "MoMo Bridge"/);
   assert.doesNotMatch(panelSource, /__MN_WEB_PANEL_TITLE__/);
   assert.match(source, /MarginNote → 墨墨背单词/);
   assert.doesNotMatch(source, /单词书导入/);
-  assert.match(htmlSource, /<title>MoMo Import<\/title>/);
-  assert.match(webBuildSource, /<title>MoMo Import<\/title>/);
+  assert.match(source, /<h1>MoMo Bridge<\/h1>/);
+  assert.match(htmlSource, /<title>MoMo Bridge<\/title>/);
+  assert.match(webBuildSource, /<title>MoMo Bridge<\/title>/);
+  assert.equal(addonManifest.title, "MoMo Bridge");
+  assert.equal(addonManifest.addonid, "cn.marginnote.momo-vocabulary-import");
+  assert.equal(packageSource.mnaddonFileName, "MoMo Bridge");
   assert.doesNotMatch(webBuildSource, /MarginNote Web Template/);
 });
 
@@ -55,7 +61,7 @@ test("Three pages share heading, history, and mobile layout foundations", () => 
   assert.match(styleSource, /\.ai-settings-heading\s*\{[^}]*padding:\s*0;[^}]*border:\s*0;/s);
   assert.match(styleSource, /\.ai-settings-heading p:last-child\s*\{[^}]*font-size:\s*12px;[^}]*line-height:\s*1\.5;/s);
   assert.match(styleSource, /\.reading-history-item\s*\{[^}]*border-radius:\s*6px;/s);
-  assert.match(styleSource, /\.reading-history-item summary\s*\{[^}]*padding:\s*9px 10px;/s);
+  assert.match(styleSource, /\.reading-history-item > summary\s*\{[^}]*justify-content:\s*space-between;[^}]*padding:\s*9px 10px;/s);
   assert.match(styleSource, /\.import-layout,\s*\n\s*\.reading-layout,\s*\n\s*\.ai-settings-layout\s*\{[^}]*padding:\s*18px;/s);
   assert.doesNotMatch(styleSource, /@media[\s\S]*\.import-options\s*\{[^}]*grid-template-columns:\s*1fr;/s);
   assert.match(source, /各 AI 服务商 API Key/);
@@ -102,6 +108,15 @@ test("AI 阅读页面只展示已背诵数据并按最多三十个单词生成",
   assert.match(styleSource, /\.reading-reading-options\s*\{[^}]*grid-column:\s*1 \/ -1/s);
   assert.match(source, /function renderCurrentReadingArticle\(\)/);
   assert.match(source, /renderCurrentReadingArticle\(\)/);
+  assert.match(source, /readingRightView/);
+  assert.match(source, /className=\{`app-shell\$\{activePage === "reading" \? " reading-page-shell" : ""\}`\}/);
+  assert.match(source, /本次阅读/);
+  assert.match(source, /阅读历史/);
+  assert.match(styleSource, /\.reading-view-tabs\s*\{/);
+  assert.match(styleSource, /@media \(min-width:\s*701px\)\s*\{[^}]*\.reading-page-shell\s*\{[^}]*height:\s*100vh;[^}]*overflow:\s*hidden/s);
+  assert.match(styleSource, /\.reading-page-shell \.reading-layout\s*\{[^}]*flex:\s*1;[^}]*min-height:\s*0/s);
+  assert.match(styleSource, /\.reading-page-shell \.reading-card,\s*\.reading-page-shell \.reading-history-card\s*\{[^}]*overflow-y:\s*auto;[^}]*overscroll-behavior:\s*contain/s);
+  assert.match(styleSource, /\.reading-page-shell \.reading-view-tabs\s*\{[^}]*position:\s*sticky;[^}]*top:\s*0/s);
   assert.doesNotMatch(source, /reading-generation-action/);
   assert.doesNotMatch(source, /reading-pause-button/);
   assert.match(styleSource, /\.reading-word-highlight/);
@@ -117,7 +132,19 @@ test("AI 阅读页面只展示已背诵数据并按最多三十个单词生成",
   );
   assert.match(styleSource, /\.reading-paragraph-translation/);
   assert.match(styleSource, /\.reading-history-translation/);
-  assert.match(styleSource, /\.reading-history-translation\s*\{[^}]*padding:\s*4px 8px;[^}]*line-height:\s*1\.35/s);
+  assert.match(styleSource, /\.reading-article-paragraphs,\s*\.reading-history-paragraphs\s*\{[^}]*gap:\s*14px/s);
+  assert.match(styleSource, /\.reading-history-paragraphs\s*\{[^}]*margin-top:\s*8px;[^}]*gap:\s*4px/s);
+  assert.match(styleSource, /\.reading-history-translation\s*\{[^}]*margin-top:\s*2px;[^}]*padding:\s*2px 6px;[^}]*border-left:\s*3px solid var\(--brand\);[^}]*font-size:\s*10px;[^}]*line-height:\s*1\.25/s);
+  assert.match(styleSource, /\.reading-history-translation > summary\s*\{[^}]*font-size:\s*10px/s);
+  assert.match(styleSource, /\.reading-paragraph-translation > summary,\s*\.reading-history-translation > summary\s*\{[^}]*display:\s*flex;[^}]*gap:\s*0;[^}]*justify-content:\s*flex-start/s);
+  assert.doesNotMatch(styleSource, /\.reading-paragraph-translation > summary::before/);
+  assert.doesNotMatch(styleSource, /\.reading-history-translation > summary::before/);
+  assert.match(source, /<details className="reading-history-translation">\s*<summary>显示本段翻译<\/summary>\s*<p>\{paragraph\.translation\}<\/p>/s);
+  assert.doesNotMatch(source, /<small>\{paragraph\.translation\}<\/small>/);
+  assert.match(styleSource, /\.reading-history-content \.reading-history-translation p\s*\{[^}]*margin:\s*3px 0 0;[^}]*font-size:\s*10px;[^}]*line-height:\s*1\.4/s);
+  assert.doesNotMatch(styleSource, /\.reading-history-card > \.history-heading\s*\{[^}]*border-top:/s);
+  assert.match(source, /className="history-empty reading-history-empty">生成文章后/);
+  assert.match(styleSource, /\.reading-history-empty\s*\{[^}]*padding:\s*0;[^}]*border:\s*0/s);
   assert.match(styleSource, /\.reading-history-paragraph > p\s*\{[^}]*margin:\s*0;/s);
   assert.match(styleSource, /\.ai-actions button\s*{[^}]*width:\s*104px/s);
   assert.match(styleSource, /\.ai-actions \.primary-action\s*{[^}]*width:\s*104px/s);

@@ -314,7 +314,7 @@ var __MN_WEB_API_GLOBAL__ = (function () {
   }
 
   function setupWebPanelUI(controller) {
-    controller.navigationItem.title = "MoMo Import";
+    controller.navigationItem.title = "MoMo Bridge";
     controller.view.autoresizingMask = 0;
     controller.view.backgroundColor = UIColor.clearColor();
     controller.view.layer.shadowOffset = { width: 0, height: 2 };
@@ -342,7 +342,7 @@ var __MN_WEB_API_GLOBAL__ = (function () {
     controller.titleBar.autoresizingMask = (1 << 1);
 
     controller.titleLabel = new UILabel({ x: 40, y: 0, width: initWidth - 80, height: TITLE_HEIGHT });
-    controller.titleLabel.text = "MoMo Import";
+    controller.titleLabel.text = "MoMo Bridge";
     controller.titleLabel.textAlignment = 1;
     controller.titleLabel.font = UIFont.boldSystemFontOfSize(14);
     controller.titleLabel.textColor = UIColor.darkGrayColor();

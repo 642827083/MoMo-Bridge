@@ -1,4 +1,4 @@
-# MoMo Import
+# MoMo Bridge
 
 这是一个 MarginNote 4 Web 插件：在脑图中多选由 OhMyMN AutoComplete 制作的单词卡片，读取标题中的第一个英文单词原型，并把卡片中的英文上下文和最后一行中文翻译作为对应单词的墨墨例句上传。
 
@@ -29,7 +29,7 @@ npm run build
 构建会生成：
 
 ```text
-MoMo Import-v2.0.0.mnaddon
+MoMo Bridge-v2.0.0.mnaddon
 ```
 
 在 MarginNote 中安装这个 `.mnaddon` 文件后，点击插件图标打开窗口。

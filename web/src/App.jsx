@@ -244,6 +244,7 @@ function App() {
   const [historyEntries, setHistoryEntries] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [retryingHistoryId, setRetryingHistoryId] = useState("");
+  const [readingRightView, setReadingRightView] = useState("current");
   const [activePage, setActivePage] = useState("import");
   const [aiProvider, setAiProvider] = useState("deepseek");
   const [aiProfiles, setAiProfiles] = useState({});
@@ -973,10 +974,10 @@ function App() {
   }
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell${activePage === "reading" ? " reading-page-shell" : ""}`}>
       <header className="app-heading">
         <div>
-          <h1>MoMo Import</h1>
+          <h1>MoMo Bridge</h1>
           <p className="eyebrow">MarginNote → 墨墨背单词</p>
         </div>
         <span className="status-dot" aria-label={busy ? "正在处理" : "就绪"} />
@@ -1500,8 +1501,31 @@ function App() {
 
           </section>
 
-          <section className="reading-history-card" aria-label="阅读历史">
-            {renderCurrentReadingArticle()}
+          <section className="reading-history-card" aria-label="AI 阅读内容">
+            <div className="reading-view-tabs" role="tablist" aria-label="阅读内容视图">
+              <button
+                className={readingRightView === "current" ? "reading-view-tab is-active" : "reading-view-tab"}
+                type="button"
+                role="tab"
+                aria-selected={readingRightView === "current"}
+                onClick={() => setReadingRightView("current")}
+              >
+                本次阅读
+              </button>
+              <button
+                className={readingRightView === "history" ? "reading-view-tab is-active" : "reading-view-tab"}
+                type="button"
+                role="tab"
+                aria-selected={readingRightView === "history"}
+                onClick={() => setReadingRightView("history")}
+              >
+                阅读历史
+              </button>
+            </div>
+
+            {readingRightView === "current" ? (
+              <>
+                {renderCurrentReadingArticle()}
             {currentArticle?.questions?.length ? (
               <section className="reading-questions" aria-label="阅读理解题">
                 <div className="reading-questions-heading">
@@ -1531,7 +1555,10 @@ function App() {
                   ))}
                 </div>
               </section>
-            ) : null}
+                ) : null}
+              </>
+            ) : (
+              <>
             <div className="history-heading">
               <div>
                 <p className="eyebrow">本机记录</p>
@@ -1592,7 +1619,7 @@ function App() {
                               {paragraph.translation ? (
                                 <details className="reading-history-translation">
                                   <summary>显示本段翻译</summary>
-                                  <small>{paragraph.translation}</small>
+                                  <p>{paragraph.translation}</p>
                                 </details>
                               ) : null}
                             </div>
@@ -1608,7 +1635,7 @@ function App() {
                       {!entry.paragraphs?.length && entry.translation ? (
                         <details className="reading-history-translation">
                           <summary>显示全文翻译</summary>
-                          <small>{entry.translation}</small>
+                          <p>{entry.translation}</p>
                         </details>
                       ) : null}
                       {renderReadingArticleActions(entry, true)}
@@ -1635,7 +1662,9 @@ function App() {
                 ))}
               </div>
             ) : (
-              <div className="history-empty">生成文章后，这里会保存阅读历史。</div>
+              <div className="history-empty reading-history-empty">生成文章后，这里会保存阅读历史。</div>
+            )}
+              </>
             )}
           </section>
         </main>
