@@ -98,7 +98,6 @@ test("MomoApi chooses the best response after a batch update", () => {
   assert.match(source, /const posted = extractNotepad\(postPayload\)/);
   assert.match(source, /postedCheck\.present === postedCheck\.total/);
   assert.match(source, /preferNotepad\(posted, after, update\.candidates\)/);
-  assert.match(source, /function appendMissingWords\(token, path, notepad, words\)/);
   assert.match(source, /function readNotepadUntilWords\(token, path, notepad, words\)/);
   assert.match(source, /const maxAttempts = 6/);
   assert.match(source, /setTimeout\(resolve, milliseconds\)/);
@@ -122,8 +121,8 @@ test("MomoApi resolves vocabulary IDs and creates translated phrases", () => {
   assert.match(source, /const spellings = \[example\.lemma, example\.word\]/);
   assert.match(source, /for \(const vocabularyId of targets\.ids\)/);
   assert.match(source, /voc_id: vocabularyId/);
-  assert.match(source, /interpretation: example\.interpretation/);
-  assert.match(source, /origin: example\.origin/);
+  assert.match(source, /interpretation: record\.example\.interpretation/);
+  assert.match(source, /origin: record\.example\.origin/);
   assert.match(source, /墨墨接口已响应，但重新读取时未找到这条例句/);
   assert.match(source, /tags: \["考研"\]/);
 });

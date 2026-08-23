@@ -1,6 +1,6 @@
 {
   "name": "momo-vocabulary-import",
-  "version": "2.4.5",
+  "version": "2.4.6",
   "private": true,
   "scripts": {
     "build": "node scripts/build-release.js --test",
@@ -18,10 +18,8 @@
     "html-minifier-terser": "^7.2.0",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
-    "react-router-dom": "^7.14.2",
     "terser": "^5.46.1",
-    "vite": "^8.0.9",
-    "zustand": "^5.0.12"
+    "vite": "^8.0.9"
   },
   "mnRails": {
     "template": "web"

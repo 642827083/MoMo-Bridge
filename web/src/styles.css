@@ -632,15 +632,6 @@ button:disabled {
   line-height: 1.75;
 }
 
-.reading-article-vocabulary-tools,
-.reading-history-vocabulary-tools {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 12px;
-  align-items: center;
-  margin-top: 12px;
-}
-
 .reading-highlight-option {
   display: inline-flex;
   min-width: 0;
@@ -678,11 +669,6 @@ button:disabled {
   flex: 0 0 auto;
   gap: 8px;
   align-items: center;
-}
-
-.reading-vocabulary-legend {
-  color: var(--muted);
-  font-size: 11px;
 }
 
 .reading-vocabulary-summary {
