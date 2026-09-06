@@ -22,6 +22,15 @@ test("MomoApi uses the request, JSON, and HTTP-status methods exported by Margin
   assert.doesNotMatch(source, /OptionsError/);
 });
 
+test("Web bridge persists import and reading preferences separately from tokens", () => {
+  assert.match(bridgeSource, /UI_SETTINGS_KEY/);
+  assert.match(bridgeSource, /function safeUiSettings\(value\)/);
+  assert.match(bridgeSource, /function savedUiSettings\(\)/);
+  assert.match(bridgeSource, /JSON\.stringify\(next\), UI_SETTINGS_KEY/);
+  assert.match(bridgeSource, /importOptions: uiSettings\.importOptions/);
+  assert.match(bridgeSource, /readingOptions: uiSettings\.readingOptions/);
+});
+
 test("MomoApi uses the current memo notepad endpoint", () => {
   assert.match(source, /\/memo\/notepads/);
   assert.match(source, /requestJSON\(token, "\/memo\/notepads\?limit=10&offset=0", "GET"\)/);

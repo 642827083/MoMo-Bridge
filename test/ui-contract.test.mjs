@@ -41,6 +41,17 @@ test("AI settings page keeps connection fields separate from article options", (
   assert.match(styleSource, /\.ai-settings-card/);
 });
 
+test("Import and AI reading preferences load and save through the native bridge", () => {
+  assert.match(source, /settings\.importOptions/);
+  assert.match(source, /settings\.readingOptions/);
+  assert.match(source, /saveSettings\(bookId, \{ addWords: checked \}\)/);
+  assert.match(source, /saveSettings\(bookId, \{ addExamples: checked \}\)/);
+  assert.match(source, /saveSettings\(bookId, \{ articleType: value \}\)/);
+  assert.match(source, /saveSettings\(bookId, \{ length: value \}\)/);
+  assert.match(source, /saveSettings\(bookId, \{ translation: checked \}\)/);
+  assert.match(source, /saveSettings\(bookId, \{ questions: checked \}\)/);
+});
+
 test("AI settings supports multiple providers and keeps provider profiles separate", () => {
   assert.match(source, /const AI_PROVIDERS = \[/);
   assert.match(source, /value: "deepseek"/);
@@ -122,7 +133,8 @@ test("AI 阅读页面只展示已背诵数据并按最多三十个单词生成",
   assert.match(styleSource, /\.reading-word-highlight/);
   assert.match(styleSource, /\.reading-heading-highlight-option/);
   assert.match(styleSource, /\.reading-history-summary-actions/);
-  assert.match(styleSource, /\.reading-actions \.reading-action-button\s*\{[^}]*width:\s*100%/s);
+  assert.match(styleSource, /\.reading-action-button\s*\{[^}]*width:\s*100%/s);
+  assert.doesNotMatch(styleSource, /\.reading-actions \.reading-action-button\s*\{/);
   assert.match(styleSource, /\.reading-article-actions\s*\{[^}]*grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\)/s);
   assert.match(styleSource, /\.reading-article-heading\s*\{[^}]*align-items:\s*flex-end/s);
   assert.ok(

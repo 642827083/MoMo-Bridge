@@ -6,6 +6,7 @@ var __MN_WEB_BRIDGE_COMMANDS_GLOBAL__ = (function () {
   const AI_MODEL_KEY = "cn.marginnote.momo-vocabulary-import.deepseek-model";
   const AI_PROVIDER_KEY = "cn.marginnote.momo-vocabulary-import.ai-provider";
   const AI_PROFILES_KEY = "cn.marginnote.momo-vocabulary-import.ai-provider-profiles";
+  const UI_SETTINGS_KEY = "cn.marginnote.momo-vocabulary-import.ui-settings";
 
   function toBridgePayload(value) {
     return value === undefined ? null : value;
@@ -54,10 +55,47 @@ var __MN_WEB_BRIDGE_COMMANDS_GLOBAL__ = (function () {
     return NSUserDefaults.standardUserDefaults().objectForKey(BOOK_ID_KEY) || "";
   }
 
+  function safeUiSettings(value) {
+    const source = value && typeof value === "object" ? value : {};
+    const importOptions = source.importOptions && typeof source.importOptions === "object"
+      ? source.importOptions
+      : {};
+    const readingOptions = source.readingOptions && typeof source.readingOptions === "object"
+      ? source.readingOptions
+      : {};
+    return {
+      importOptions: {
+        addWords: importOptions.addWords !== false,
+        addExamples: importOptions.addExamples === true,
+        addStudy: importOptions.addStudy === true,
+        advanceStudy: importOptions.addStudy === true && importOptions.advanceStudy === true,
+      },
+      readingOptions: {
+        articleType: typeof readingOptions.articleType === "string" ? readingOptions.articleType : "postgraduate2",
+        length: typeof readingOptions.length === "string" ? readingOptions.length : "medium",
+        translation: readingOptions.translation !== false,
+        questions: readingOptions.questions === true,
+      },
+    };
+  }
+
+  function savedUiSettings() {
+    const raw = NSUserDefaults.standardUserDefaults().objectForKey(UI_SETTINGS_KEY);
+    if (!raw) return safeUiSettings({});
+    try {
+      return safeUiSettings(typeof raw === "string" ? JSON.parse(raw) : raw);
+    } catch (ignored) {
+      return safeUiSettings({});
+    }
+  }
+
   function getSettings() {
+    const uiSettings = savedUiSettings();
     return {
       token: savedToken(),
       bookId: savedBookId(),
+      importOptions: uiSettings.importOptions,
+      readingOptions: uiSettings.readingOptions,
     };
   }
 
@@ -67,6 +105,21 @@ var __MN_WEB_BRIDGE_COMMANDS_GLOBAL__ = (function () {
     const defaults = NSUserDefaults.standardUserDefaults();
     defaults.setObjectForKey(token, TOKEN_KEY);
     defaults.setObjectForKey(bookId, BOOK_ID_KEY);
+    if (payload && (payload.importOptions || payload.readingOptions)) {
+      const current = savedUiSettings();
+      const next = safeUiSettings({
+        importOptions: Object.assign({}, current.importOptions, payload.importOptions || {}),
+        readingOptions: Object.assign({}, current.readingOptions, payload.readingOptions || {}),
+      });
+      defaults.setObjectForKey(JSON.stringify(next), UI_SETTINGS_KEY);
+      return {
+        saved: true,
+        tokenConfigured: !!token,
+        bookId,
+        importOptions: next.importOptions,
+        readingOptions: next.readingOptions,
+      };
+    }
     return { saved: true, tokenConfigured: !!token, bookId };
   }
 

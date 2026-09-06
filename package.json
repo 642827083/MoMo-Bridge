@@ -1,12 +1,12 @@
 {
   "name": "momo-vocabulary-import",
-  "version": "2.4.6",
+  "version": "2.4.7",
   "private": true,
   "scripts": {
     "build": "node scripts/build-release.js --test",
     "build:release": "node scripts/build-release.js --release",
     "dev": "node scripts/dev-web.js",
-    "test": "node --test test/lemma.test.mjs test/notepad.test.mjs test/selection.test.mjs test/examples.test.mjs test/momo-api-behavior.test.mjs test/progress-estimate.test.mjs test/native-api-contract.test.mjs test/selection-native-contract.test.mjs test/ui-contract.test.mjs test/history-contract.test.mjs test/history-behavior.test.mjs",
+    "test": "node --test test/lemma.test.mjs test/notepad.test.mjs test/examples.test.mjs test/momo-api-behavior.test.mjs test/progress-estimate.test.mjs test/native-api-contract.test.mjs test/selection-native-contract.test.mjs test/ui-contract.test.mjs test/history-contract.test.mjs test/history-behavior.test.mjs",
     "version": "node scripts/bump-version.js",
     "version:patch": "node scripts/bump-version.js patch",
     "version:minor": "node scripts/bump-version.js minor",

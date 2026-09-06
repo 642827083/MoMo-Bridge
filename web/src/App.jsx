@@ -336,6 +336,26 @@ function App() {
       .then((settings) => {
         setToken(settings.token || "");
         setBookId(settings.bookId || "");
+        const importOptions = settings.importOptions && typeof settings.importOptions === "object"
+          ? settings.importOptions
+          : {};
+        const readingOptions = settings.readingOptions && typeof settings.readingOptions === "object"
+          ? settings.readingOptions
+          : {};
+        if (typeof importOptions.addWords === "boolean") setAddWords(importOptions.addWords);
+        if (typeof importOptions.addExamples === "boolean") setAddExamples(importOptions.addExamples);
+        if (typeof importOptions.addStudy === "boolean") setAddStudy(importOptions.addStudy);
+        if (typeof importOptions.advanceStudy === "boolean") {
+          setAdvanceStudy(importOptions.addStudy === true && importOptions.advanceStudy);
+        }
+        if (READING_ARTICLE_TYPES.some((item) => item.value === readingOptions.articleType)) {
+          setReadingArticleType(readingOptions.articleType);
+        }
+        if (READING_LENGTHS.some((item) => item.value === readingOptions.length)) {
+          setReadingLength(readingOptions.length);
+        }
+        if (typeof readingOptions.translation === "boolean") setReadingTranslation(readingOptions.translation);
+        if (typeof readingOptions.questions === "boolean") setReadingQuestionsEnabled(readingOptions.questions);
       })
       .catch(() => setMessage("无法读取本机设置"));
     MNBridge.send("getAiSettings")
@@ -372,8 +392,25 @@ function App() {
     }
   }
 
-  async function saveSettings(nextBookId = bookId) {
-    await MNBridge.send("saveSettings", { token, bookId: nextBookId });
+  async function saveSettings(nextBookId = bookId, overrides = {}) {
+    await MNBridge.send("saveSettings", {
+      token,
+      bookId: nextBookId,
+      importOptions: {
+        addWords: typeof overrides.addWords === "boolean" ? overrides.addWords : addWords,
+        addExamples: typeof overrides.addExamples === "boolean" ? overrides.addExamples : addExamples,
+        addStudy: typeof overrides.addStudy === "boolean" ? overrides.addStudy : addStudy,
+        advanceStudy: typeof overrides.advanceStudy === "boolean"
+          ? overrides.advanceStudy
+          : advanceStudy,
+      },
+      readingOptions: {
+        articleType: typeof overrides.articleType === "string" ? overrides.articleType : readingArticleType,
+        length: typeof overrides.length === "string" ? overrides.length : readingLength,
+        translation: typeof overrides.translation === "boolean" ? overrides.translation : readingTranslation,
+        questions: typeof overrides.questions === "boolean" ? overrides.questions : readingQuestionsEnabled,
+      },
+    });
   }
 
   function switchAiProvider(nextProvider) {
@@ -1015,24 +1052,26 @@ function App() {
             <h2>墨墨导入</h2>
             <p>将脑图中选中的单词、例句和背诵计划同步到墨墨。</p>
           </div>
-          <label className="field-label" htmlFor="momo-token">墨墨 Token</label>
-          <a
-            className="token-help"
-            href={TOKEN_HELP_URL}
-            target="_blank"
-            rel="noreferrer"
-            onClick={openTokenHelp}
-          >
-            如何获取墨墨 Token
-          </a>
-          <input
-            id="momo-token"
-            type="password"
-            value={token}
-            autoComplete="off"
-            placeholder="粘贴 Token（可带 Bearer 前缀）"
-            onChange={(event) => setToken(event.target.value)}
-          />
+          <div className="token-field">
+            <label className="field-label" htmlFor="momo-token">墨墨 Token</label>
+            <a
+              className="token-help"
+              href={TOKEN_HELP_URL}
+              target="_blank"
+              rel="noreferrer"
+              onClick={openTokenHelp}
+            >
+              如何获取墨墨 Token
+            </a>
+            <input
+              id="momo-token"
+              type="password"
+              value={token}
+              autoComplete="off"
+              placeholder="粘贴 Token（可带 Bearer 前缀）"
+              onChange={(event) => setToken(event.target.value)}
+            />
+          </div>
           <fieldset className="mode-block">
             <legend className="field-label">导入内容</legend>
             <div className="import-options">
@@ -1041,8 +1080,10 @@ function App() {
                   type="checkbox"
                   checked={addWords}
                   onChange={(event) => {
-                    setAddWords(event.target.checked);
+                    const checked = event.target.checked;
+                    setAddWords(checked);
                     setResult(null);
+                    saveSettings(bookId, { addWords: checked }).catch(() => setMessage("保存导入设置失败"));
                   }}
                 />
                 <span className="option-check" aria-hidden="true">✓</span>
@@ -1056,8 +1097,10 @@ function App() {
                   type="checkbox"
                   checked={addExamples}
                   onChange={(event) => {
-                    setAddExamples(event.target.checked);
+                    const checked = event.target.checked;
+                    setAddExamples(checked);
                     setResult(null);
+                    saveSettings(bookId, { addExamples: checked }).catch(() => setMessage("保存导入设置失败"));
                   }}
                 />
                 <span className="option-check" aria-hidden="true">✓</span>
@@ -1075,6 +1118,10 @@ function App() {
                     setAddStudy(checked);
                     if (!checked) setAdvanceStudy(false);
                     setResult(null);
+                    saveSettings(bookId, {
+                      addStudy: checked,
+                      advanceStudy: checked && advanceStudy,
+                    }).catch(() => setMessage("保存导入设置失败"));
                   }}
                 />
                 <span className="option-check" aria-hidden="true">✓</span>
@@ -1101,8 +1148,10 @@ function App() {
                       role="switch"
                       checked={advanceStudy}
                       onChange={(event) => {
-                        setAdvanceStudy(event.target.checked);
+                        const checked = event.target.checked;
+                        setAdvanceStudy(checked);
                         setResult(null);
+                        saveSettings(bookId, { advanceStudy: checked }).catch(() => setMessage("保存导入设置失败"));
                       }}
                     />
                     <span className="switch-track" aria-hidden="true">
@@ -1130,44 +1179,48 @@ function App() {
             ) : null}
           </fieldset>
 
-          <div className="book-row">
-            <div className="field-block">
-              <label className="field-label" htmlFor="momo-book">目标云词本</label>
-              {notepads.length > 0 ? (
-                <select
-                  id="momo-book"
-                  value={bookId}
-                  disabled={!needsBook}
-                  onChange={(event) => {
-                    const nextBookId = event.target.value;
-                    setBookId(nextBookId);
-                    saveSettings(nextBookId).catch(() => setMessage("保存目标云词本失败"));
-                  }}
-                >
-                  <option value="">选择云词本</option>
-                  {notepads.map((notepad) => (
-                    <option key={notepad.id} value={notepad.id}>{notepad.title}</option>
-                  ))}
-                </select>
-              ) : (
-                <input
-                  id="momo-book"
-                  value={bookId}
-                  disabled={!needsBook}
-                  placeholder="云词本 ID"
-                  onChange={(event) => setBookId(event.target.value)}
-                />
-              )}
+          <div className="import-source-actions">
+            <div className="book-row">
+              <div className="field-block">
+                <label className="field-label" htmlFor="momo-book">目标云词本</label>
+                {notepads.length > 0 ? (
+                  <select
+                    id="momo-book"
+                    value={bookId}
+                    disabled={!needsBook}
+                    onChange={(event) => {
+                      const nextBookId = event.target.value;
+                      setBookId(nextBookId);
+                      saveSettings(nextBookId).catch(() => setMessage("保存目标云词本失败"));
+                    }}
+                  >
+                    <option value="">选择云词本</option>
+                    {notepads.map((notepad) => (
+                      <option key={notepad.id} value={notepad.id}>{notepad.title}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    id="momo-book"
+                    value={bookId}
+                    disabled={!needsBook}
+                    placeholder="云词本 ID"
+                    onChange={(event) => setBookId(event.target.value)}
+                    onBlur={() => saveSettings().catch(() => setMessage("保存目标云词本失败"))}
+                  />
+                )}
+              </div>
+              <button className="secondary-button" type="button" disabled={busy || !needsBook} onClick={loadNotepads}>
+                加载词本
+              </button>
             </div>
-            <button className="secondary-button" type="button" disabled={busy || !needsBook} onClick={loadNotepads}>
-              加载词本
-            </button>
-          </div>
 
-          {selectedBook ? <p className="selection-note">目标：{selectedBook.title}</p> : null}
-          <button className="primary-action" type="button" disabled={!canPreview} onClick={previewSelection}>
-            识别已选卡片
-          </button>
+            {selectedBook ? <p className="selection-note">目标：{selectedBook.title}</p> : null}
+            <button className="primary-action import-detect-action" type="button" disabled={!canPreview} onClick={previewSelection}>
+              识别已选卡片
+            </button>
+            <p className="import-detect-hint">从当前选中的脑图卡片读取单词、例句和翻译</p>
+          </div>
           {message ? <p className="message" role="status">{message}</p> : null}
         </section>
 
@@ -1424,13 +1477,29 @@ function App() {
             <div className="reading-controls">
               <div className="reading-control">
                 <label className="field-label" htmlFor="reading-article-type">文章类型</label>
-                <select id="reading-article-type" value={readingArticleType} onChange={(event) => setReadingArticleType(event.target.value)}>
+                <select
+                  id="reading-article-type"
+                  value={readingArticleType}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setReadingArticleType(value);
+                    saveSettings(bookId, { articleType: value }).catch(() => setReadingMessage("保存阅读设置失败"));
+                  }}
+                >
                   {READING_ARTICLE_TYPES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
                 </select>
               </div>
               <div className="reading-control">
                 <label className="field-label" htmlFor="reading-length">文章长度</label>
-                <select id="reading-length" value={readingLength} onChange={(event) => setReadingLength(event.target.value)}>
+                <select
+                  id="reading-length"
+                  value={readingLength}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setReadingLength(value);
+                    saveSettings(bookId, { length: value }).catch(() => setReadingMessage("保存阅读设置失败"));
+                  }}
+                >
                   {READING_LENGTHS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
                 </select>
               </div>
@@ -1440,7 +1509,11 @@ function App() {
                     id="reading-translation"
                     type="checkbox"
                     checked={readingTranslation}
-                    onChange={(event) => setReadingTranslation(event.target.checked)}
+                    onChange={(event) => {
+                      const checked = event.target.checked;
+                      setReadingTranslation(checked);
+                      saveSettings(bookId, { translation: checked }).catch(() => setReadingMessage("保存阅读设置失败"));
+                    }}
                   />
                   <label htmlFor="reading-translation">生成中文翻译</label>
                 </div>
@@ -1449,7 +1522,11 @@ function App() {
                     id="reading-questions"
                     type="checkbox"
                     checked={readingQuestionsEnabled}
-                    onChange={(event) => setReadingQuestionsEnabled(event.target.checked)}
+                    onChange={(event) => {
+                      const checked = event.target.checked;
+                      setReadingQuestionsEnabled(checked);
+                      saveSettings(bookId, { questions: checked }).catch(() => setReadingMessage("保存阅读设置失败"));
+                    }}
                   />
                   <label htmlFor="reading-questions">同时生成阅读题</label>
                 </div>
