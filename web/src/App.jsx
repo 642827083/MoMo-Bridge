@@ -7,6 +7,12 @@ import {
   updateEstimateDeadline,
 } from "./domain/progressEstimate.mjs";
 import MNBridge from "./lib/mnBridge";
+import TokenVisibilityIcon from "./components/TokenVisibilityIcon";
+import OptionCheck from "./components/OptionCheck";
+import RefreshIcon from "./components/RefreshIcon";
+import HighlightToggle from "./components/HighlightToggle";
+import { ImportPreviewPanel, ImportHistoryPanel } from "./components/ImportContent";
+import { importResultHasFailures } from "./domain/importPresentation.mjs";
 
 const TOKEN_HELP_URL = "https://open.maimemo.com/#/";
 const MAX_EXAMPLES_PER_IMPORT = 10;
@@ -28,6 +34,7 @@ const READING_LENGTHS = [
 ];
 
 const AI_PROVIDERS = [
+  { value: "mnchatai", label: "MN ChatAI", baseUrl: "", model: "当前配置模型" },
   { value: "deepseek", label: "DeepSeek", baseUrl: "https://api.deepseek.com", model: "deepseek-v4-flash" },
   { value: "openai", label: "OpenAI", baseUrl: "https://api.openai.com/v1", model: "gpt-4o-mini" },
   { value: "siliconflow", label: "SiliconFlow", baseUrl: "https://api.siliconflow.cn/v1", model: "Qwen/Qwen2.5-7B-Instruct" },
@@ -38,7 +45,8 @@ const AI_PROVIDERS = [
 ];
 
 function aiProviderDefinition(value) {
-  return AI_PROVIDERS.find((provider) => provider.value === value) || AI_PROVIDERS[0];
+  return AI_PROVIDERS.find((provider) => provider.value === value)
+    || AI_PROVIDERS.find((provider) => provider.value === "deepseek");
 }
 
 function aiProviderProfile(value, profile) {
@@ -103,6 +111,15 @@ function formatHistoryTime(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "时间未知";
   return date.toLocaleString("zh-CN", { hour12: false });
+}
+
+function readingHistoryTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "时间未知";
+  const time = date.toLocaleTimeString("zh-CN", { hour12: false, hour: "2-digit", minute: "2-digit" });
+  return isCurrentLocalDay(date)
+    ? `今天 ${time}`
+    : `${date.toLocaleDateString("zh-CN")} ${time}`;
 }
 
 function readingArticleTypeLabel(value) {
@@ -230,11 +247,18 @@ function formatReadingQuestions(questions) {
 
 function App() {
   const [token, setToken] = useState("");
+  const [momoTokenDraft, setMomoTokenDraft] = useState("");
+  const [showMomoToken, setShowMomoToken] = useState(false);
+  const [momoSaving, setMomoSaving] = useState(false);
+  const [momoPasting, setMomoPasting] = useState(false);
+  const [momoMessage, setMomoMessage] = useState("");
+  const [momoMessageKind, setMomoMessageKind] = useState("info");
   const [bookId, setBookId] = useState("");
   const [notepads, setNotepads] = useState([]);
   const [preview, setPreview] = useState(null);
   const [result, setResult] = useState(null);
   const [message, setMessage] = useState("");
+  const [messageKind, setMessageKind] = useState("info");
   const [busy, setBusy] = useState(false);
   const [addWords, setAddWords] = useState(true);
   const [addExamples, setAddExamples] = useState(false);
@@ -244,6 +268,12 @@ function App() {
   const [historyEntries, setHistoryEntries] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [retryingHistoryId, setRetryingHistoryId] = useState("");
+  const [importRightView, setImportRightView] = useState("preview");
+  const [readingHistoryLoading, setReadingHistoryLoading] = useState(false);
+  const [historyClearTarget, setHistoryClearTarget] = useState("");
+  const [clearingHistory, setClearingHistory] = useState("");
+  const [historyMessage, setHistoryMessage] = useState("");
+  const [historyMessageKind, setHistoryMessageKind] = useState("info");
   const [readingRightView, setReadingRightView] = useState("current");
   const [activePage, setActivePage] = useState("import");
   const [aiProvider, setAiProvider] = useState("deepseek");
@@ -251,9 +281,15 @@ function App() {
   const [aiApiKey, setAiApiKey] = useState("");
   const [aiBaseUrl, setAiBaseUrl] = useState("https://api.deepseek.com");
   const [aiModel, setAiModel] = useState("deepseek-v4-flash");
+  const [mnChatAiCatalog, setMnChatAiCatalog] = useState(null);
+  const [mnChatAiSource, setMnChatAiSource] = useState("");
+  const [mnChatAiModel, setMnChatAiModel] = useState("");
+  const [mnChatAiLoading, setMnChatAiLoading] = useState(false);
+  const [mnChatAiError, setMnChatAiError] = useState("");
   const [showAiKey, setShowAiKey] = useState(false);
   const [aiSaving, setAiSaving] = useState(false);
   const [aiTesting, setAiTesting] = useState(false);
+  const [aiPasting, setAiPasting] = useState(false);
   const [aiMessage, setAiMessage] = useState("");
   const [aiMessageKind, setAiMessageKind] = useState("info");
   const [todayItems, setTodayItems] = useState([]);
@@ -264,25 +300,37 @@ function App() {
   const [readingTranslation, setReadingTranslation] = useState(true);
   const [readingQuestionsEnabled, setReadingQuestionsEnabled] = useState(false);
   const [currentArticle, setCurrentArticle] = useState(null);
+  const [readingRequest, setReadingRequest] = useState(null);
   const [readingLoading, setReadingLoading] = useState(false);
   const [readingBusy, setReadingBusy] = useState(false);
+  const [readingCancelling, setReadingCancelling] = useState(false);
   const [readingQuestionsBusy, setReadingQuestionsBusy] = useState(false);
   const [readingQuestionsTargetId, setReadingQuestionsTargetId] = useState("");
   const [highlightReadingWords, setHighlightReadingWords] = useState(true);
   const [historyHighlightState, setHistoryHighlightState] = useState({});
+  const [expandedReadingHistoryId, setExpandedReadingHistoryId] = useState("");
   const [readingMessage, setReadingMessage] = useState("");
   const [readingMessageKind, setReadingMessageKind] = useState("info");
   const [estimateDeadline, setEstimateDeadline] = useState(0);
   const [progressClock, setProgressClock] = useState(Date.now());
 
   const hasImportContent = addWords || addExamples || addStudy;
+  const usesMnChatAi = aiProvider === "mnchatai";
+  const aiConfigurationBusy = aiSaving || aiTesting || aiPasting || mnChatAiLoading || readingBusy || readingQuestionsBusy;
+  const mnChatAiModels = mnChatAiCatalog?.sources?.find((item) => item.value === mnChatAiSource)?.models || [];
+  const mnChatAiSelectionValid = mnChatAiModels.some((item) => item.value === mnChatAiModel);
+  const mnChatAiSelectionChanged = Boolean(mnChatAiCatalog)
+    && (mnChatAiSource !== mnChatAiCatalog.source || mnChatAiModel !== mnChatAiCatalog.model);
+  const momoAccountBusy = momoSaving || momoPasting || busy || readingBusy || readingLoading || readingQuestionsBusy || Boolean(clearingHistory);
+  const historyMaintenanceBusy = busy || readingBusy || readingQuestionsBusy || readingLoading
+    || historyLoading || readingHistoryLoading || Boolean(clearingHistory);
   const needsBook = addWords;
   const canPreview = hasImportContent && token.trim() && (!needsBook || bookId.trim()) && !busy;
   const previewWords = preview ? preview.lemmas : [];
   const previewExamples = preview ? preview.examples || [] : [];
   const canConfirm = previewWords.length > 0 &&
     (addWords || addStudy || previewExamples.length > 0) &&
-    canPreview;
+    canPreview && !result;
   const selectedActionNames = [
     addWords ? "单词" : "",
     addExamples ? "例句" : "",
@@ -304,6 +352,9 @@ function App() {
     [currentArticle],
   );
   const readingGenerationRef = useRef(0);
+  const nativeReadingRequestRef = useRef("");
+  const momoTokenInputRef = useRef(null);
+  const aiKeyInputRef = useRef(null);
 
   useEffect(() => {
     if (!busy || !estimateDeadline) return undefined;
@@ -331,10 +382,16 @@ function App() {
     setProgressClock(now);
   }
 
+  function showImportMessage(text, kind = "error") {
+    setMessageKind(kind);
+    setMessage(text);
+  }
+
   useEffect(() => {
     MNBridge.send("getSettings")
       .then((settings) => {
         setToken(settings.token || "");
+        setMomoTokenDraft(settings.token || "");
         setBookId(settings.bookId || "");
         const importOptions = settings.importOptions && typeof settings.importOptions === "object"
           ? settings.importOptions
@@ -357,7 +414,7 @@ function App() {
         if (typeof readingOptions.translation === "boolean") setReadingTranslation(readingOptions.translation);
         if (typeof readingOptions.questions === "boolean") setReadingQuestionsEnabled(readingOptions.questions);
       })
-      .catch(() => setMessage("无法读取本机设置"));
+      .catch(() => showImportMessage("无法读取本机设置"));
     MNBridge.send("getAiSettings")
       .then((settings) => {
         const provider = aiProviderDefinition(settings.provider).value;
@@ -373,28 +430,107 @@ function App() {
       })
       .catch(() => setAiMessage("无法读取 AI 配置"));
     loadImportHistory(false);
+    loadReadingHistory();
   }, []);
 
   useEffect(() => {
     if (activePage === "reading") loadTodayReading(false);
   }, [activePage]);
 
+  useEffect(() => {
+    if (usesMnChatAi && activePage === "settings") loadMnChatAiModels();
+  }, [usesMnChatAi, activePage]);
+
+  function applyMnChatAiCatalog(payload) {
+    setMnChatAiCatalog(payload);
+    setMnChatAiSource(payload.source || "");
+    setMnChatAiModel(payload.model || "");
+  }
+
+  async function loadMnChatAiModels() {
+    setMnChatAiLoading(true);
+    setMnChatAiError("");
+    try {
+      const payload = await MNBridge.send("getMnChatAiModels");
+      applyMnChatAiCatalog(payload);
+      if (!payload.sources?.length) setMnChatAiError("暂无可用模型，请先在 MN ChatAI 中配置服务商或刷新其内置模型。");
+    } catch (error) {
+      setMnChatAiError(error.message || "无法读取 MN ChatAI 模型列表");
+    } finally {
+      setMnChatAiLoading(false);
+    }
+  }
+
   async function loadImportHistory(showMessage = true) {
     try {
       setHistoryLoading(true);
       const payload = await MNBridge.send("listImportHistory");
       setHistoryEntries(Array.isArray(payload.entries) ? payload.entries : []);
-      if (showMessage) setMessage("导入历史已刷新");
+      if (showMessage) showImportMessage("导入历史已刷新", "success");
     } catch (error) {
-      if (showMessage) setMessage(error.message || "无法读取导入历史");
+      if (showMessage) showImportMessage(error.message || "无法读取导入历史");
     } finally {
       setHistoryLoading(false);
     }
   }
 
+  async function loadReadingHistory(showMessage = false) {
+    try {
+      setReadingHistoryLoading(true);
+      const payload = await MNBridge.send("listAiReadingHistory");
+      setReadingHistory(Array.isArray(payload.entries) ? payload.entries : []);
+      if (showMessage) {
+        setReadingMessageKind("success");
+        setReadingMessage("阅读历史已刷新");
+      }
+    } catch (error) {
+      setHistoryMessageKind("error");
+      setHistoryMessage(error.message || "无法读取 AI 阅读历史");
+      if (showMessage) {
+        setReadingMessageKind("error");
+        setReadingMessage(error.message || "无法读取 AI 阅读历史");
+      }
+    } finally {
+      setReadingHistoryLoading(false);
+    }
+  }
+
+  async function clearSelectedHistory() {
+    if (historyMaintenanceBusy || !["import", "reading"].includes(historyClearTarget)) return;
+    const target = historyClearTarget;
+    try {
+      setClearingHistory(target);
+      setHistoryClearTarget("");
+      setHistoryMessage("");
+      const payload = await MNBridge.send(target === "import" ? "clearImportHistory" : "clearAiReadingHistory", {
+        confirmed: true,
+      });
+      if (payload.cleared !== true) throw new Error("历史未清除，请重试");
+      if (target === "import") {
+        setHistoryEntries([]);
+        setRetryingHistoryId("");
+      } else {
+        readingGenerationRef.current += 1;
+        setReadingHistory([]);
+        setCurrentArticle(null);
+        setReadingSelection(chooseReadingWords(todayItems, []));
+        setHistoryHighlightState({});
+        setReadingQuestionsTargetId("");
+        setReadingRightView("current");
+        setReadingMessage("");
+      }
+      setHistoryMessageKind("success");
+      setHistoryMessage(target === "import" ? "导入历史已清除" : "AI 阅读历史已清除，当前文章和已生成统计已重置");
+    } catch (error) {
+      setHistoryMessageKind("error");
+      setHistoryMessage(error.message || "清除历史失败，请重试");
+    } finally {
+      setClearingHistory("");
+    }
+  }
+
   async function saveSettings(nextBookId = bookId, overrides = {}) {
     await MNBridge.send("saveSettings", {
-      token,
       bookId: nextBookId,
       importOptions: {
         addWords: typeof overrides.addWords === "boolean" ? overrides.addWords : addWords,
@@ -413,7 +549,60 @@ function App() {
     });
   }
 
+  async function pasteMomoToken() {
+    if (momoAccountBusy) return;
+    setMomoPasting(true);
+    setMomoMessage("");
+    try {
+      const payload = await MNBridge.send("getMomoTokenClipboard");
+      if (typeof payload?.text !== "string" || !payload.text.trim()) {
+        throw new Error("剪贴板没有文本，请先复制墨墨 Token");
+      }
+      setMomoTokenDraft(payload.text.trim());
+      setShowMomoToken(false);
+      setMomoMessageKind("info");
+      setMomoMessage("已粘贴，请点击保存 Token");
+    } catch (error) {
+      setMomoMessageKind("error");
+      setMomoMessage(error.message || "无法读取剪贴板，请长按输入框粘贴");
+    } finally {
+      setMomoPasting(false);
+    }
+  }
+
+  async function saveMomoConfiguration(clear = false) {
+    const nextToken = clear ? "" : momoTokenDraft.trim();
+    if (!clear && !nextToken.replace(/^Bearer\s+/i, "").trim()) {
+      setMomoMessageKind("error");
+      setMomoMessage("请先填写墨墨开放 API Token");
+      return;
+    }
+    try {
+      setMomoSaving(true);
+      setMomoMessage("");
+      await MNBridge.send("saveMomoToken", { token: nextToken });
+      if (nextToken !== token) {
+        setNotepads([]);
+        setPreview(null);
+        setResult(null);
+        setTodayItems([]);
+        setReadingSelection([]);
+      }
+      setToken(nextToken);
+      setMomoTokenDraft(nextToken);
+      setShowMomoToken(false);
+      setMomoMessageKind("success");
+      setMomoMessage(clear ? "墨墨 Token 已清除" : "墨墨 Token 已保存，下次打开会自动读取");
+    } catch (error) {
+      setMomoMessageKind("error");
+      setMomoMessage(error.message || (clear ? "清除墨墨 Token 失败" : "保存墨墨 Token 失败"));
+    } finally {
+      setMomoSaving(false);
+    }
+  }
+
   function switchAiProvider(nextProvider) {
+    if (aiConfigurationBusy) return;
     const next = aiProviderDefinition(nextProvider).value;
     const currentDraft = aiProviderProfile(aiProvider, {
       apiKey: aiApiKey,
@@ -426,10 +615,37 @@ function App() {
     setAiApiKey(nextDraft.apiKey);
     setAiBaseUrl(nextDraft.baseUrl);
     setAiModel(nextDraft.model);
+    setShowAiKey(false);
     setAiMessage("");
   }
 
+  async function pasteAiKey() {
+    if (aiConfigurationBusy) return;
+    setAiPasting(true);
+    setAiMessage("");
+    try {
+      const payload = await MNBridge.send("getAiKeyClipboard");
+      if (typeof payload?.text !== "string" || !payload.text.trim()) {
+        throw new Error("剪贴板没有文本，请先复制 API Key");
+      }
+      setAiApiKey(payload.text.trim());
+      setShowAiKey(false);
+      setAiMessageKind("info");
+      setAiMessage("已粘贴，请点击保存设置");
+    } catch (error) {
+      setAiMessageKind("error");
+      setAiMessage(error.message || "无法读取剪贴板，请长按输入框粘贴");
+    } finally {
+      setAiPasting(false);
+    }
+  }
+
   async function saveAiConfiguration() {
+    if (usesMnChatAi && !mnChatAiSelectionValid) {
+      setAiMessageKind("error");
+      setAiMessage("请先选择可用的 MN ChatAI 服务商和模型");
+      return;
+    }
     try {
       setAiSaving(true);
       setAiMessage("");
@@ -439,11 +655,13 @@ function App() {
         model: aiModel,
       });
       const profiles = { ...aiProfiles, [aiProvider]: currentDraft };
-      await MNBridge.send("saveAiSettings", {
+      const saved = await MNBridge.send("saveAiSettings", {
         provider: aiProvider,
         providers: profiles,
         ...currentDraft,
+        ...(usesMnChatAi ? { mnChatAiSource, mnChatAiModel } : {}),
       });
+      if (saved.mnChatAiSelection) applyMnChatAiCatalog(saved.mnChatAiSelection);
       setAiProfiles(profiles);
       setAiMessageKind("success");
       setAiMessage(`${aiProviderDefinition(aiProvider).label} 配置已保存`);
@@ -456,7 +674,12 @@ function App() {
   }
 
   async function testAiConnection() {
-    if (!aiApiKey.trim()) {
+    if (usesMnChatAi && mnChatAiSelectionChanged) {
+      setAiMessageKind("info");
+      setAiMessage("请先保存所选模型，再测试连接");
+      return;
+    }
+    if (!usesMnChatAi && !aiApiKey.trim()) {
       setAiMessageKind("error");
       setAiMessage(`请先填写 ${aiProviderDefinition(aiProvider).label} API Key`);
       return;
@@ -483,7 +706,7 @@ function App() {
   async function loadTodayReading(showMessage = true) {
     if (!token.trim()) {
       setReadingMessageKind("error");
-      setReadingMessage("请先在墨墨导入页面填写 Token");
+      setReadingMessage("请先在设置页面填写并保存墨墨 Token");
       return;
     }
     try {
@@ -521,6 +744,7 @@ function App() {
       words: article.words,
       articleType: article.articleType,
       questionCount: READING_QUESTION_COUNT,
+      requestToken: nativeReadingRequestRef.current,
     });
     if (requestId !== undefined && requestId !== readingGenerationRef.current) {
       return { cancelled: true };
@@ -538,10 +762,12 @@ function App() {
       setReadingMessage("没有待生成阅读内容的单词");
       return null;
     }
-    if (!aiApiKey.trim()) {
+    if (!usesMnChatAi && !aiApiKey.trim()) {
       setReadingMessageKind("error");
-      setReadingMessage(`请先在 AI 设置页面填写 ${aiProviderDefinition(aiProvider).label} API Key`);
-      setActivePage("ai");
+      setReadingMessage(`请先在设置页面的 AI 设置中填写 ${aiProviderDefinition(aiProvider).label} API Key`);
+      setActivePage("settings");
+      setAiMessageKind("error");
+      setAiMessage(`请先填写 ${aiProviderDefinition(aiProvider).label} API Key`);
       return null;
     }
     const articleType = options.articleType || readingArticleType;
@@ -554,10 +780,14 @@ function App() {
       : options.generateQuestions === true;
     const requestId = readingGenerationRef.current + 1;
     readingGenerationRef.current = requestId;
+    nativeReadingRequestRef.current = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
     try {
+      setReadingRequest({ words: selectedWords, articleType, length, includeTranslation, generateQuestions: shouldGenerateQuestions });
+      setReadingRightView("current");
       setReadingBusy(true);
       setReadingMessage("");
       const payload = await MNBridge.send("generateTodayReading", {
+        requestToken: nativeReadingRequestRef.current,
         settings: {
           provider: aiProvider,
           apiKey: aiApiKey,
@@ -597,7 +827,7 @@ function App() {
       if (article.historyEntry) {
         setReadingHistory((current) => {
           const withoutCurrent = current.filter((entry) => entry.id !== article.historyEntry.id);
-          return [article.historyEntry, ...withoutCurrent];
+          return [article.historyEntry, ...withoutCurrent].slice(0, 10);
         });
       }
       setReadingSelection([]);
@@ -619,17 +849,32 @@ function App() {
       setReadingMessage(error.message || "生成 AI 阅读文章失败");
       return null;
     } finally {
-      if (requestId === readingGenerationRef.current) setReadingBusy(false);
+      if (requestId === readingGenerationRef.current) {
+        setReadingBusy(false);
+        setReadingRequest(null);
+      }
     }
   }
 
-  function pauseReadingGeneration() {
-    if (!readingBusy) return;
+  async function pauseReadingGeneration() {
+    if (!readingBusy || readingCancelling) return;
     readingGenerationRef.current += 1;
-    setReadingBusy(false);
-    setReadingQuestionsBusy(false);
-    setReadingMessageKind("warning");
-    setReadingMessage("已暂停本次生成，可以修改文章类型或长度后重新生成");
+    setReadingCancelling(true);
+    try {
+      if (usesMnChatAi) {
+        await MNBridge.send("cancelAiReadingGeneration", { requestToken: nativeReadingRequestRef.current });
+      }
+      setReadingMessageKind("warning");
+      setReadingMessage("已暂停本次生成，可以修改文章类型或长度后重新生成");
+    } catch (error) {
+      setReadingMessageKind("error");
+      setReadingMessage(error.message || "暂停失败，请稍后重试");
+    } finally {
+      setReadingBusy(false);
+      setReadingQuestionsBusy(false);
+      setReadingCancelling(false);
+      setReadingRequest(null);
+    }
   }
 
   async function generateSelectedReading() {
@@ -667,10 +912,12 @@ function App() {
 
   async function generateReadingQuestionsForArticle(article) {
     if (!article?.article) return;
-    if (!aiApiKey.trim()) {
+    if (!usesMnChatAi && !aiApiKey.trim()) {
       setReadingMessageKind("error");
-      setReadingMessage(`请先在 AI 设置页面填写 ${aiProviderDefinition(aiProvider).label} API Key`);
-      setActivePage("ai");
+      setReadingMessage(`请先在设置页面的 AI 设置中填写 ${aiProviderDefinition(aiProvider).label} API Key`);
+      setActivePage("settings");
+      setAiMessageKind("error");
+      setAiMessage(`请先填写 ${aiProviderDefinition(aiProvider).label} API Key`);
       return;
     }
     const targetId = readingArticleId(article);
@@ -792,6 +1039,45 @@ function App() {
     );
   }
 
+  function renderReadingPreparation() {
+    const preparation = readingBusy && readingRequest ? readingRequest : {
+      words: readingSelection,
+      articleType: readingArticleType,
+      length: readingLength,
+      includeTranslation: readingTranslation,
+      generateQuestions: readingQuestionsEnabled,
+    };
+    const status = readingCancelling ? "正在暂停生成…"
+      : readingBusy ? readingQuestionsBusy ? "文章已生成，正在生成阅读题…" : "正在生成阅读文章…"
+      : readingLoading ? "正在读取今日已背诵单词…" : "生成前预览";
+    return (
+      <section className="reading-preparation" aria-label="本次阅读预览" aria-busy={readingBusy || readingLoading}>
+        <p className="reading-preparation-status" role="status">{status}</p>
+        <h3>{readingBusy ? "本次使用" : "本次待使用"} · {preparation.words.length} 个单词</h3>
+        <p className="reading-preparation-note">
+          {readingBusy ? "完成后，文章会显示在这里。" : `每篇最多使用 ${MAX_READING_WORDS} 个未生成单词。`}
+        </p>
+        {preparation.words.length ? (
+          <div className="reading-word-list reading-preparation-words" aria-label="本次使用的单词">
+            {preparation.words.map((word) => <span key={`${word.id}-${word.spelling}`}>{word.spelling}</span>)}
+          </div>
+        ) : (
+          <p className="reading-empty-note">
+            {!token.trim() ? "请先在设置中保存墨墨 Token，再重新读取今日已背诵单词。"
+              : todayItems.length === 0 ? "点击左侧“重新读取”，载入今日已背诵单词。"
+              : "今日已背诵单词均已有对应阅读，可以在阅读历史中查看。"}
+          </p>
+        )}
+        <div className="reading-preparation-options" aria-label="本次生成选项">
+          <span>{readingArticleTypeLabel(preparation.articleType)}</span>
+          <span>{READING_LENGTHS.find((item) => item.value === preparation.length)?.label || "中等"}</span>
+          <span>{preparation.includeTranslation ? "含中文翻译" : "仅英文"}</span>
+          {preparation.generateQuestions ? <span>含阅读题</span> : null}
+        </div>
+      </section>
+    );
+  }
+
   function renderCurrentReadingArticle() {
     if (!currentArticle) return null;
     return (
@@ -803,19 +1089,17 @@ function App() {
           </div>
           <div className="reading-article-heading-actions">
             <span>{currentArticle.words?.length || 0} 个单词</span>
-            <label
-              className="reading-highlight-option reading-heading-highlight-option"
-              title="标记今日词汇"
-            >
-              <input
-                type="checkbox"
-                checked={highlightReadingWords}
-                onChange={(event) => setHighlightReadingWords(event.target.checked)}
-              />
-              <span>标记词汇</span>
-            </label>
+            <HighlightToggle active={highlightReadingWords} onChange={setHighlightReadingWords} />
           </div>
         </div>
+        {currentArticle.words?.length ? (
+          <details key={readingArticleId(currentArticle) || currentArticle.article} className="reading-word-details reading-article-words">
+            <summary>本篇使用 · {currentArticle.words.length} 个单词</summary>
+            <div className="reading-word-list">
+              {currentArticle.words.map((word) => <span key={`${word.id}-${word.spelling}`}>{word.spelling}</span>)}
+            </div>
+          </details>
+        ) : null}
         {currentArticleWordSummary.total ? (
           <p className="reading-vocabulary-summary">
             文章中找到 {currentArticleWordSummary.used}/{currentArticleWordSummary.total} 个本次词汇
@@ -859,13 +1143,14 @@ function App() {
   function openTokenHelp(event) {
     event.preventDefault();
     MNBridge.send("openExternalURL", { url: TOKEN_HELP_URL }).catch(() => {
-      setMessage("无法打开墨墨开放平台，请手动访问 https://open.maimemo.com/#/");
+      setMomoMessageKind("error");
+      setMomoMessage("无法打开墨墨开放平台，请手动访问 https://open.maimemo.com/#/");
     });
   }
 
   async function loadNotepads() {
     if (!token.trim()) {
-      setMessage("请先填写墨墨开放 API Token");
+      showImportMessage("请先在设置页面填写并保存墨墨 Token");
       return;
     }
 
@@ -875,9 +1160,9 @@ function App() {
       await saveSettings();
       const payload = await MNBridge.send("listMomoNotepads");
       setNotepads(payload.notepads || []);
-      setMessage(`已加载 ${payload.notepads?.length || 0} 本云词本`);
+      showImportMessage(`已加载 ${payload.notepads?.length || 0} 本云词本`, "success");
     } catch (error) {
-      setMessage(error.message || "加载云词本失败");
+      showImportMessage(error.message || "加载云词本失败");
     } finally {
       setBusy(false);
     }
@@ -885,6 +1170,7 @@ function App() {
 
   async function previewSelection() {
     try {
+      setImportRightView("preview");
       setBusy(true);
       setMessage("");
       setResult(null);
@@ -907,18 +1193,19 @@ function App() {
         const selectedViewCount = payload.debug?.selectedViewCount;
         const titleSamples = payload.debug?.titleSamples?.filter(Boolean).join(" | ");
         const sampleMessage = titleSamples ? ` 标题样例：${titleSamples}` : "";
-        setMessage(selectedViewCount === 0
+        showImportMessage(selectedViewCount === 0
           ? "MarginNote 未返回已选卡片，请保持卡片选中后再点击识别"
           : `已读取选中卡片，但未识别到可导入的单词原型。${sampleMessage}`);
       }
     } catch (error) {
-      setMessage(error.message || "读取已选卡片失败");
+      showImportMessage(error.message || "读取已选卡片失败");
     } finally {
       setBusy(false);
     }
   }
 
   async function confirmImport() {
+    if (!canConfirm) return;
     try {
       setBusy(true);
       setMessage("");
@@ -948,10 +1235,14 @@ function App() {
         },
       });
       setResult(importResult);
-      if (importResult.historyError) setMessage(importResult.historyError);
+      const importHasFailures = importResultHasFailures(importResult, { addWords, addExamples, addStudy, advanceStudy });
+      if (importResult.historyError) showImportMessage(importResult.historyError);
+      else showImportMessage(importHasFailures
+        ? "导入已结束，有失败项，请在导入历史中查看并重试" : "导入已完成",
+      importHasFailures ? "error" : "success");
       await loadImportHistory(false);
     } catch (error) {
-      setMessage(error.message || "导入失败");
+      showImportMessage(error.message || "导入失败");
     } finally {
       setBusy(false);
     }
@@ -985,14 +1276,21 @@ function App() {
         },
       });
       setResult(retryResult);
+      setImportRightView("preview");
       setAddWords(entry.retry.wordCount > 0);
       setAddExamples(entry.retry.exampleCount > 0);
       setAddStudy(entry.retry.studyCount > 0);
       setAdvanceStudy(entry.retry.studyCount > 0 && entry.options?.advanceStudy === true);
-      setMessage(retryResult.historyError || "失败项重试完成，结果已保存为新的历史记录");
+      const retryHasFailures = importResultHasFailures(retryResult, {
+        addWords: entry.retry.wordCount > 0, addExamples: entry.retry.exampleCount > 0,
+        addStudy: entry.retry.studyCount > 0, advanceStudy: entry.retry.studyCount > 0 && entry.options?.advanceStudy === true,
+      });
+      showImportMessage(retryResult.historyError || (retryHasFailures
+        ? "重试已结束，仍有失败项，请查看本次结果" : "失败项重试完成，结果已保存为新的历史记录"),
+      retryResult.historyError || retryHasFailures ? "error" : "success");
       await loadImportHistory(false);
     } catch (error) {
-      setMessage(error.message || "重试失败项失败");
+      showImportMessage(error.message || "重试失败项失败");
       await loadImportHistory(false);
     } finally {
       setBusy(false);
@@ -1004,26 +1302,25 @@ function App() {
     if (!result?.failed?.length) return;
     try {
       await navigator.clipboard.writeText(result.failed.join("\n"));
-      setMessage("失败单词已复制");
+      showImportMessage("失败单词已复制", "success");
     } catch (error) {
-      setMessage("无法复制失败单词");
+      showImportMessage("无法复制失败单词");
     }
   }
 
   return (
-    <div className={`app-shell${activePage === "reading" ? " reading-page-shell" : ""}`}>
-      <header className="app-heading">
-        <div>
-          <h1>MoMo Bridge</h1>
-          <p className="eyebrow">MarginNote → 墨墨背单词</p>
-        </div>
-        <span className="status-dot" aria-label={busy ? "正在处理" : "就绪"} />
-      </header>
-
+    <div className={`app-shell${activePage === "reading" ? " reading-page-shell" : activePage === "import" ? " import-page-shell" : ""}`}>
       <nav className="page-tabs" aria-label="功能页面">
+        <span
+          className="page-tab-indicator"
+          aria-hidden="true"
+          style={{ transform: `translateX(${activePage === "import" ? 0 : activePage === "reading" ? 100 : 200}%)` }}
+        />
         <button
           className={`page-tab${activePage === "import" ? " is-active" : ""}`}
           type="button"
+          aria-current={activePage === "import" ? "page" : undefined}
+          disabled={Boolean(clearingHistory)}
           onClick={() => setActivePage("import")}
         >
           墨墨导入
@@ -1031,550 +1328,350 @@ function App() {
         <button
           className={`page-tab${activePage === "reading" ? " is-active" : ""}`}
           type="button"
+          aria-current={activePage === "reading" ? "page" : undefined}
+          disabled={Boolean(clearingHistory)}
           onClick={() => setActivePage("reading")}
         >
           AI 阅读
         </button>
         <button
-          className={`page-tab${activePage === "ai" ? " is-active" : ""}`}
+          className={`page-tab${activePage === "settings" ? " is-active" : ""}`}
           type="button"
-          onClick={() => setActivePage("ai")}
+          aria-current={activePage === "settings" ? "page" : undefined}
+          disabled={Boolean(clearingHistory)}
+          onClick={() => setActivePage("settings")}
         >
-          AI 设置
+          设置
         </button>
       </nav>
 
+      <div key={activePage} className="page-content">
       {activePage === "import" ? (
-      <main className="import-layout">
+      <main key="import" className="import-layout">
         <section className="settings-column" aria-label="导入设置">
-          <div className="page-intro import-page-intro">
-            <p className="eyebrow">墨墨词汇管理</p>
-            <h2>墨墨导入</h2>
-            <p>将脑图中选中的单词、例句和背诵计划同步到墨墨。</p>
-          </div>
-          <div className="token-field">
-            <label className="field-label" htmlFor="momo-token">墨墨 Token</label>
-            <a
-              className="token-help"
-              href={TOKEN_HELP_URL}
-              target="_blank"
-              rel="noreferrer"
-              onClick={openTokenHelp}
-            >
-              如何获取墨墨 Token
-            </a>
-            <input
-              id="momo-token"
-              type="password"
-              value={token}
-              autoComplete="off"
-              placeholder="粘贴 Token（可带 Bearer 前缀）"
-              onChange={(event) => setToken(event.target.value)}
-            />
-          </div>
-          <fieldset className="mode-block">
-            <legend className="field-label">导入内容</legend>
-            <div className="import-options">
-              <label className={`import-option${addWords ? " is-selected" : ""}`}>
-                <input
-                  type="checkbox"
-                  checked={addWords}
-                  onChange={(event) => {
-                    const checked = event.target.checked;
-                    setAddWords(checked);
-                    setResult(null);
-                    saveSettings(bookId, { addWords: checked }).catch(() => setMessage("保存导入设置失败"));
-                  }}
-                />
-                <span className="option-check" aria-hidden="true">✓</span>
-                <span className="option-copy">
-                  <strong>添加单词</strong>
-                  <small>写入目标云词本</small>
-                </span>
-              </label>
-              <label className={`import-option${addExamples ? " is-selected" : ""}`}>
-                <input
-                  type="checkbox"
-                  checked={addExamples}
-                  onChange={(event) => {
-                    const checked = event.target.checked;
-                    setAddExamples(checked);
-                    setResult(null);
-                    saveSettings(bookId, { addExamples: checked }).catch(() => setMessage("保存导入设置失败"));
-                  }}
-                />
-                <span className="option-check" aria-hidden="true">✓</span>
-                <span className="option-copy">
-                  <strong>添加例句</strong>
-                  <small>上传原句与翻译</small>
-                </span>
-              </label>
-              <label className={`import-option${addStudy ? " is-selected" : ""}`}>
-                <input
-                  type="checkbox"
-                  checked={addStudy}
-                  onChange={(event) => {
-                    const checked = event.target.checked;
-                    setAddStudy(checked);
-                    if (!checked) setAdvanceStudy(false);
-                    setResult(null);
-                    saveSettings(bookId, {
-                      addStudy: checked,
-                      advanceStudy: checked && advanceStudy,
-                    }).catch(() => setMessage("保存导入设置失败"));
-                  }}
-                />
-                <span className="option-check" aria-hidden="true">✓</span>
-                <span className="option-copy">
-                  <strong>添加背诵</strong>
-                  <small>加入墨墨背诵列表</small>
-                </span>
-              </label>
-              {addExamples ? (
-                <p className="option-guidance example-duration-note">
-                  例句较多时会自动分批上传，所需时间通常比只添加单词更长。
-                </p>
-              ) : null}
-              {addStudy ? (
-                <p className="option-guidance study-limit-note">
-                  添加背诵会占用墨墨账号的单词上限，达到上限后将无法继续添加。
-                </p>
-              ) : null}
-              {addStudy ? (
-                <div className="option-guidance study-advance-control">
-                  <label className="study-advance-option">
-                    <input
-                      type="checkbox"
-                      role="switch"
-                      checked={advanceStudy}
-                      onChange={(event) => {
-                        const checked = event.target.checked;
-                        setAdvanceStudy(checked);
-                        setResult(null);
-                        saveSettings(bookId, { advanceStudy: checked }).catch(() => setMessage("保存导入设置失败"));
-                      }}
-                    />
-                    <span className="switch-track" aria-hidden="true">
-                      <span className="switch-thumb" />
-                    </span>
-                    <span>已在背诵中则提前复习</span>
-                  </label>
-                  <details className="option-info">
-                    <summary aria-label="查看提前复习说明" title="查看提前复习说明">i</summary>
-                    <p>
-                      <span className="option-info-line">需 10 级账号并开启墨墨自动同步</span>
-                      <span className="option-info-line">开启后会调整当前学习计划。</span>
-                    </p>
-                  </details>
-                </div>
-              ) : null}
+          <div className="import-settings-body">
+            <div className="page-intro import-page-intro">
+              <p className="eyebrow">墨墨词汇管理</p>
+              <h2>墨墨导入</h2>
+              <p>将脑图中选中的单词、例句和背诵计划同步到墨墨。</p>
             </div>
-            {!hasImportContent ? (
-              <p className="selection-note selection-warning" role="alert">请至少选择一种导入内容。</p>
-            ) : !addWords ? (
-              <p className="selection-note">添加例句或背诵不需要选择目标云词本。</p>
+            {!token.trim() ? (
+              <p className="momo-connection-hint">
+                请先在设置中保存墨墨 Token。
+                <button className="settings-link" type="button" onClick={() => setActivePage("settings")}>前往设置</button>
+              </p>
             ) : null}
-            {addStudy ? (
-              <p className="selection-note">添加背诵使用墨墨公测接口，请先在墨墨 App 中开启自动同步。</p>
-            ) : null}
-          </fieldset>
-
-          <div className="import-source-actions">
-            <div className="book-row">
-              <div className="field-block">
-                <label className="field-label" htmlFor="momo-book">目标云词本</label>
-                {notepads.length > 0 ? (
-                  <select
-                    id="momo-book"
-                    value={bookId}
-                    disabled={!needsBook}
-                    onChange={(event) => {
-                      const nextBookId = event.target.value;
-                      setBookId(nextBookId);
-                      saveSettings(nextBookId).catch(() => setMessage("保存目标云词本失败"));
-                    }}
-                  >
-                    <option value="">选择云词本</option>
-                    {notepads.map((notepad) => (
-                      <option key={notepad.id} value={notepad.id}>{notepad.title}</option>
-                    ))}
-                  </select>
-                ) : (
+            <fieldset className="mode-block">
+              <legend className="field-label">导入内容</legend>
+              <div className="import-options">
+                <label className={`import-option${addWords ? " is-selected" : ""}`}>
                   <input
-                    id="momo-book"
-                    value={bookId}
-                    disabled={!needsBook}
-                    placeholder="云词本 ID"
-                    onChange={(event) => setBookId(event.target.value)}
-                    onBlur={() => saveSettings().catch(() => setMessage("保存目标云词本失败"))}
+                    type="checkbox"
+                    checked={addWords}
+                    onChange={(event) => {
+                      const checked = event.target.checked;
+                      setAddWords(checked);
+                      setResult(null);
+                      setMessage("");
+                      saveSettings(bookId, { addWords: checked }).catch(() => showImportMessage("保存导入设置失败"));
+                    }}
                   />
-                )}
+                  <OptionCheck />
+                  <span className="option-copy">
+                    <strong>添加单词</strong>
+                    <small>写入目标云词本</small>
+                  </span>
+                </label>
+                <label className={`import-option${addExamples ? " is-selected" : ""}`}>
+                  <input
+                    type="checkbox"
+                    checked={addExamples}
+                    onChange={(event) => {
+                      const checked = event.target.checked;
+                      setAddExamples(checked);
+                      setResult(null);
+                      setMessage("");
+                      saveSettings(bookId, { addExamples: checked }).catch(() => showImportMessage("保存导入设置失败"));
+                    }}
+                  />
+                  <OptionCheck />
+                  <span className="option-copy">
+                    <strong>添加例句</strong>
+                    <small>上传原句与翻译</small>
+                  </span>
+                </label>
+                <label className={`import-option${addStudy ? " is-selected" : ""}`}>
+                  <input
+                    type="checkbox"
+                    checked={addStudy}
+                    onChange={(event) => {
+                      const checked = event.target.checked;
+                      setAddStudy(checked);
+                      if (!checked) setAdvanceStudy(false);
+                      setResult(null);
+                      setMessage("");
+                      saveSettings(bookId, {
+                        addStudy: checked,
+                        advanceStudy: checked && advanceStudy,
+                      }).catch(() => showImportMessage("保存导入设置失败"));
+                    }}
+                  />
+                  <OptionCheck />
+                  <span className="option-copy">
+                    <strong>添加背诵</strong>
+                    <small>加入墨墨背诵列表</small>
+                  </span>
+                </label>
+                {addStudy ? (
+                  <div className="option-guidance study-advance-control">
+                    <label className="study-advance-label" htmlFor="momo-advance-study">提前复习</label>
+                    <details className="option-info">
+                      <summary aria-label="查看背诵与提前复习说明" title="查看背诵与提前复习说明">i</summary>
+                      <p>
+                        <span className="option-info-line">添加背诵会占用墨墨账号的单词上限，达到上限后将无法继续添加。</span>
+                        <span className="option-info-line">提前复习仅对已在背诵中的单词生效。</span>
+                        <span className="option-info-line">提前复习需 10 级账号并开启墨墨自动同步。</span>
+                        <span className="option-info-line">开启提前复习后会调整当前学习计划。</span>
+                      </p>
+                    </details>
+                    <label className="study-advance-option">
+                      <input
+                        id="momo-advance-study"
+                        aria-label="已在背诵中则提前复习"
+                        type="checkbox"
+                        role="switch"
+                        checked={advanceStudy}
+                        onChange={(event) => {
+                          const checked = event.target.checked;
+                          setAdvanceStudy(checked);
+                          setResult(null);
+                          setMessage("");
+                          saveSettings(bookId, { advanceStudy: checked }).catch(() => showImportMessage("保存导入设置失败"));
+                        }}
+                      />
+                      <span className="switch-track" aria-hidden="true">
+                        <span className="switch-thumb" />
+                      </span>
+                    </label>
+                  </div>
+                ) : null}
               </div>
-              <button className="secondary-button" type="button" disabled={busy || !needsBook} onClick={loadNotepads}>
-                加载词本
-              </button>
-            </div>
+              {!hasImportContent ? (
+                <p className="selection-note selection-warning" role="alert">请至少选择一种导入内容。</p>
+              ) : null}
+              <details className="import-guidance">
+                <summary>导入说明</summary>
+                <div>
+                  <p>识别已选卡片后，请在右侧预览中确认内容，再提交导入。</p>
+                  {addExamples ? (
+                    <p className="option-guidance example-duration-note">
+                      例句较多时会自动分批上传，所需时间通常比只添加单词更长。
+                    </p>
+                  ) : null}
+                  {!addWords && hasImportContent ? <p>添加例句或背诵不需要选择目标云词本。</p> : null}
+                  {addStudy ? <p>添加背诵使用墨墨公测接口，请先在墨墨 App 中开启自动同步。</p> : null}
+                </div>
+              </details>
+            </fieldset>
 
-            {selectedBook ? <p className="selection-note">目标：{selectedBook.title}</p> : null}
+            <div className="import-source-actions">
+              <div className="book-row">
+                <div className="field-block">
+                  <label className="field-label" htmlFor="momo-book">目标云词本</label>
+                  {notepads.length > 0 ? (
+                    <select
+                      id="momo-book"
+                      value={bookId}
+                      disabled={!needsBook}
+                      onChange={(event) => {
+                        const nextBookId = event.target.value;
+                        setBookId(nextBookId);
+                      setResult(null);
+                      setMessage("");
+                        saveSettings(nextBookId).catch(() => showImportMessage("保存目标云词本失败"));
+                      }}
+                    >
+                      <option value="">选择云词本</option>
+                      {notepads.map((notepad) => (
+                        <option key={notepad.id} value={notepad.id}>{notepad.title}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      id="momo-book"
+                      value={bookId}
+                      disabled={!needsBook}
+                      placeholder="云词本 ID"
+                      onChange={(event) => {
+                        setBookId(event.target.value);
+                        setResult(null);
+                        setMessage("");
+                      }}
+                      onBlur={() => saveSettings().catch(() => showImportMessage("保存目标云词本失败"))}
+                    />
+                  )}
+                </div>
+                <button className="secondary-button" type="button" disabled={busy || !needsBook} onClick={loadNotepads}>
+                  加载词本
+                </button>
+              </div>
+
+              {selectedBook ? <p className="selection-note">目标：{selectedBook.title}</p> : null}
+            </div>
+          </div>
+          <div className="import-action-footer">
             <button className="primary-action import-detect-action" type="button" disabled={!canPreview} onClick={previewSelection}>
               识别已选卡片
             </button>
             <p className="import-detect-hint">从当前选中的脑图卡片读取单词、例句和翻译</p>
+              {message ? <p className={`message is-${messageKind}`} role="status">{message}</p> : null}
           </div>
-          {message ? <p className="message" role="status">{message}</p> : null}
         </section>
 
-        <section className="preview-column" aria-label="导入预览">
-          <div className="section-heading">
-            <div>
-              <p className="eyebrow">导入预览</p>
-              <h2>{preview ? `${previewWords.length} 个单词原型` : "等待识别"}</h2>
-            </div>
-            {preview ? <span className="count-badge">已选 {preview.selectedCount} 张</span> : null}
+        <section className="preview-column" aria-label="导入内容">
+          <div className="reading-view-tabs" role="tablist" aria-label="导入内容视图">
+            <button
+              id="import-preview-tab"
+              className={importRightView === "preview" ? "reading-view-tab is-active" : "reading-view-tab"}
+              type="button"
+              role="tab"
+              aria-selected={importRightView === "preview"}
+              aria-controls="import-preview-panel"
+              onClick={() => setImportRightView("preview")}
+            >
+              导入预览
+            </button>
+            <button
+              id="import-history-tab"
+              className={importRightView === "history" ? "reading-view-tab is-active" : "reading-view-tab"}
+              type="button"
+              role="tab"
+              aria-selected={importRightView === "history"}
+              aria-controls="import-history-panel"
+              onClick={() => setImportRightView("history")}
+            >
+              导入历史
+            </button>
           </div>
-
-          {previewWords.length > 0 ? (
-            <>
-              <div className="word-list">
-                {previewWords.map((word) => <span key={word}>{word}</span>)}
-              </div>
-              <div className="example-summary">
-                <strong>{addExamples ? `${previewExamples.length} 条例句` : "不添加例句"}</strong>
-                <span>
-                  {!addExamples
-                    ? "当前只会把单词添加到目标云词本"
-                    : preview.cardsWithoutExamples?.length
-                    ? `有 ${preview.cardsWithoutExamples.length} 张卡片未识别到完整例句`
-                    : "将把英文句子和最后一行中文翻译上传到对应单词"}
-                </span>
-              </div>
-              {addExamples && previewExamples.length > MAX_EXAMPLES_PER_IMPORT ? (
-                <p className="queue-note">
-                  将自动分成 {Math.ceil(previewExamples.length / MAX_EXAMPLES_PER_IMPORT)} 批上传，每批最多 {MAX_EXAMPLES_PER_IMPORT} 条；遇到限流或短暂网络错误会自动等待重试。
-                </p>
-              ) : null}
-              {addExamples && preview.cardsWithoutExamples?.length ? (
-                <details className="missing-example-details">
-                  <summary>查看未识别完整例句的卡片</summary>
-                  <ul>
-                    {preview.cardsWithoutExamples.map((title, index) => (
-                      <li key={`${title || "未读取到标题"}-${index}`}>
-                        {title || "<未读取到标题>"}
-                      </li>
-                    ))}
-                  </ul>
-                </details>
-              ) : null}
-              {addExamples && previewExamples.length ? (
-                <div className="example-list">
-                  {previewExamples.slice(0, 8).map((example) => (
-                    <div className="example-item" key={`${example.word}-${example.phrase}`}>
-                      <strong>{example.word}</strong>
-                      <span>{example.phrase}</span>
-                      <small>{example.interpretation}</small>
-                      <small>来源：{example.origin || "（空）"}</small>
-                    </div>
-                  ))}
-                  <small>
-                    {previewExamples.length > 8
-                      ? `当前仅预览前 8 条，确认时将上传全部 ${previewExamples.length} 条例句`
-                      : `确认时将上传全部 ${previewExamples.length} 条例句`}
-                  </small>
-                </div>
-              ) : null}
-              <div className="confirm-row">
-                <p>{preview.skippedTitles.length
-                  ? `已跳过 ${preview.skippedTitles.length} 张非单词卡片`
-                  : `本次将添加：${selectedActionNames.join("、")}`}</p>
-                <button className="primary-action" type="button" disabled={!canConfirm} onClick={confirmImport}>
-                  {confirmActionLabel}
-                </button>
-              </div>
-              {busy && importProgress?.totalBatches ? (
-                <div className="queue-progress" role="status">
-                  <div className="queue-progress-heading">
-                    <strong>{importProgress.phase === "waiting"
-                      ? `第 ${importProgress.batchIndex}/${importProgress.totalBatches} 批正在等待重试`
-                      : importProgress.phase === "complete"
-                        ? `例句 ${importProgress.totalBatches} 批已处理完成`
-                        : importProgress.phase === "failed"
-                          ? `第 ${importProgress.batchIndex}/${importProgress.totalBatches} 批处理失败`
-                          : `正在处理第 ${importProgress.batchIndex}/${importProgress.totalBatches} 批`}</strong>
-                    <span>{Math.min(importProgress.completedExamples || 0, importProgress.totalExamples || 0)}/{importProgress.totalExamples || 0} 条</span>
-                  </div>
-                  <progress
-                    max={importProgress.totalExamples || 1}
-                    value={Math.min(importProgress.completedExamples || 0, importProgress.totalExamples || 0)}
-                  />
-                  {importProgress.phase === "waiting" ? (
-                    <small>
-                      墨墨接口暂时不可用，将在约 {importProgress.waitSeconds || 0} 秒后自动重试
-                      {importProgress.retryCount ? `（已重试 ${importProgress.retryCount} 次）` : ""}
-                    </small>
-                  ) : importProgress.phase === "failed" ? (
-                    <small>{importProgress.reason || "该批次失败，后续批次未提交"}</small>
-                  ) : null}
-                  {progressEstimate && importProgress.phase !== "complete" && importProgress.phase !== "failed" ? (
-                    <small>
-                      预计剩余：{formatRemainingTime(progressEstimate.seconds)}
-                      {importProgress.retryCount ? "（包含自动重试，时间可能延长）" : ""}
-                    </small>
-                  ) : null}
-                </div>
-              ) : null}
-            </>
+          {importRightView === "preview" ? (
+            <ImportPreviewPanel
+              preview={preview} previewWords={previewWords} previewExamples={previewExamples}
+              addWords={addWords} addExamples={addExamples} addStudy={addStudy} advanceStudy={advanceStudy}
+              selectedActionNames={selectedActionNames} canConfirm={canConfirm} confirmActionLabel={confirmActionLabel}
+              confirmImport={confirmImport} busy={busy} importProgress={importProgress} progressEstimate={progressEstimate}
+              formatRemainingTime={formatRemainingTime} maxExamplesPerImport={MAX_EXAMPLES_PER_IMPORT}
+              result={result} copyFailedWords={copyFailedWords}
+            />
           ) : (
-            <div className="empty-state">在脑图中多选单词卡片后，识别结果会显示在这里。</div>
+            <ImportHistoryPanel
+              historyEntries={historyEntries} busy={busy} historyLoading={historyLoading} loadImportHistory={loadImportHistory}
+              formatHistoryTime={formatHistoryTime} historyOptions={historyOptions} tokenConfigured={Boolean(token.trim())}
+              retryingHistoryId={retryingHistoryId} retryHistory={retryHistory}
+            />
           )}
-
-          {result && addWords ? (
-            <div className="result-grid">
-              <div><strong>{result.success?.length || 0}</strong><span>单词成功</span></div>
-              <div><strong>{result.duplicate?.length || 0}</strong><span>单词已存在</span></div>
-              <div><strong>{result.failed?.length || 0}</strong><span>单词失败</span></div>
-              {result.failed?.length ? (
-                <button className="secondary-button" type="button" onClick={copyFailedWords}>复制失败单词</button>
-              ) : null}
-            </div>
-          ) : null}
-          {result?.examples && addExamples ? (
-            <>
-              <p className="example-result">
-                例句：成功 {result.examples.success?.length || 0} 条，已存在 {result.examples.duplicate?.length || 0} 条，失败 {result.examples.failed?.length || 0} 条
-                {result.examples.error ? `（${result.examples.error}）` : ""}
-              </p>
-              {result.examples.failed?.[0]?.reason ? (
-                <p className="example-result">首条失败原因：{result.examples.failed[0].reason}</p>
-              ) : null}
-              {result.examples.queue?.totalBatches ? (
-                <p className="example-result">
-                  批量任务：共 {result.examples.queue.totalBatches} 批
-                  {result.examples.queue.retryCount ? `，自动重试 ${result.examples.queue.retryCount} 次` : "，未触发自动重试"}
-                </p>
-              ) : null}
-            </>
-          ) : null}
-          {result?.study && addStudy ? (
-            <>
-              <p className="study-result">
-                背诵：新增 {result.study.addedCount || 0} 个，未新增 {result.study.notAddedCount || 0} 个，未找到词条 {result.study.missing?.length || 0} 个
-                {result.study.error ? `（${result.study.error}）` : ""}
-              </p>
-              {result.study.notAddedCount ? (
-                <p className="study-result">未新增通常表示单词已在背诵列表中，或墨墨单词上限不足。</p>
-              ) : null}
-              {result.study.advanceRequested ? (
-                <>
-                  <p className="study-result">
-                    提前复习：成功 {result.study.advancedCount || 0} 个，未提前 {result.study.notAdvancedCount || 0} 个
-                  </p>
-                  {result.study.advanceError ? (
-                    <p className="study-result">未提前原因：{result.study.advanceError}</p>
-                  ) : result.study.notAdvancedCount ? (
-                    <p className="study-result">未提前通常表示单词尚未加入背诵列表、账号未达到 10 级，或墨墨公测接口未完成处理。</p>
-                  ) : null}
-                </>
-              ) : null}
-            </>
-          ) : null}
-
-          <section className="history-section" aria-label="导入历史">
-            <div className="history-heading">
-              <div>
-                <p className="eyebrow">导入历史</p>
-                <h3>最近 {historyEntries.length} 次任务</h3>
-              </div>
-              <button
-                className="history-refresh"
-                type="button"
-                disabled={busy || historyLoading}
-                onClick={() => loadImportHistory(true)}
-              >
-                刷新
-              </button>
-            </div>
-            <p className="history-privacy">历史保存在本机，不记录墨墨 Token；最多保留最近 20 次。</p>
-            {historyEntries.length ? (
-              <div className="history-list">
-                {historyEntries.map((entry) => (
-                  <details className="history-item" key={entry.id}>
-                    <summary>
-                      <span>
-                        <strong>{entry.kind === "retry" ? "失败项重试" : "批量导入"}</strong>
-                        <small>{formatHistoryTime(entry.createdAt)} · {historyOptions(entry)}</small>
-                      </span>
-                      <span className={entry.retry?.available ? "history-status has-failure" : "history-status"}>
-                        {entry.retry?.available ? "有失败项" : "已完成"}
-                      </span>
-                    </summary>
-                    <div className="history-details">
-                      <p>
-                        单词：成功 {entry.result?.words?.success?.length || 0}，已存在 {entry.result?.words?.duplicate?.length || 0}，失败 {entry.result?.words?.failed?.length || 0}
-                      </p>
-                      <p>
-                        例句：成功 {entry.result?.examples?.success?.length || 0}，已存在 {entry.result?.examples?.duplicate?.length || 0}，失败 {entry.result?.examples?.failed?.length || 0}
-                      </p>
-                      {entry.options?.addStudy ? (
-                        <p>
-                          背诵：新增 {entry.result?.study?.addedCount || 0}，未新增 {entry.result?.study?.notAddedCount || 0}；提前复习成功 {entry.result?.study?.advancedCount || 0}，未提前 {entry.result?.study?.notAdvancedCount || 0}
-                        </p>
-                      ) : null}
-                      {entry.result?.examples?.failed?.[0]?.reason ? (
-                        <p className="history-error">例句失败原因：{entry.result.examples.failed[0].reason}</p>
-                      ) : null}
-                      {entry.result?.study?.error || entry.result?.study?.advanceError ? (
-                        <p className="history-error">
-                          背诵失败原因：{entry.result.study.error || entry.result.study.advanceError}
-                        </p>
-                      ) : null}
-                      {entry.retry?.available ? (
-                        <>
-                          <p className="history-retry-summary">
-                            可重试：单词 {entry.retry.wordCount || 0} 个、例句 {entry.retry.exampleCount || 0} 条、背诵 {entry.retry.studyCount || 0} 个
-                          </p>
-                          {entry.retry.studyCount ? (
-                            <p className="history-limit-note">墨墨背诵接口只返回数量，无法指出具体失败单词，因此背诵会重新提交该次相关单词。</p>
-                          ) : null}
-                          <button
-                            className="secondary-button history-retry-button"
-                            type="button"
-                            disabled={busy || !token.trim()}
-                            onClick={() => retryHistory(entry)}
-                          >
-                            {retryingHistoryId === entry.id ? "正在重试…" : "仅重试失败项"}
-                          </button>
-                        </>
-                      ) : (
-                        <p className="history-retry-summary">没有需要重试的失败项。</p>
-                      )}
-                    </div>
-                  </details>
-                ))}
-              </div>
-            ) : (
-              <div className="history-empty">完成一次导入后，这里会保留结果和失败项。</div>
-            )}
-          </section>
         </section>
       </main>
       ) : activePage === "reading" ? (
-        <main className="reading-layout" aria-label="AI 阅读">
+        <main key="reading" className="reading-layout" aria-label="AI 阅读">
           <section className="reading-card">
-            <div className="reading-heading">
-              <div>
-                <p className="eyebrow">墨墨学习数据</p>
-                <h2>AI 阅读</h2>
-                <p>根据今日已背诵单词生成一篇适合当前词汇量的英语阅读文章。</p>
-              </div>
-            </div>
-
-            <div className="reading-stat-grid">
-              <div><strong>{todayItems.length}</strong><span>今日已背诵</span></div>
-              <div><strong>{generatedTodayCount}</strong><span>已生成阅读</span></div>
-              <div><strong>{pendingTodayCount}</strong><span>待生成阅读</span></div>
-            </div>
-
-            <div className="reading-controls">
-              <div className="reading-control">
-                <label className="field-label" htmlFor="reading-article-type">文章类型</label>
-                <select
-                  id="reading-article-type"
-                  value={readingArticleType}
-                  onChange={(event) => {
-                    const value = event.target.value;
-                    setReadingArticleType(value);
-                    saveSettings(bookId, { articleType: value }).catch(() => setReadingMessage("保存阅读设置失败"));
-                  }}
-                >
-                  {READING_ARTICLE_TYPES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-                </select>
-              </div>
-              <div className="reading-control">
-                <label className="field-label" htmlFor="reading-length">文章长度</label>
-                <select
-                  id="reading-length"
-                  value={readingLength}
-                  onChange={(event) => {
-                    const value = event.target.value;
-                    setReadingLength(value);
-                    saveSettings(bookId, { length: value }).catch(() => setReadingMessage("保存阅读设置失败"));
-                  }}
-                >
-                  {READING_LENGTHS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-                </select>
-              </div>
-              <div className="reading-reading-options">
-                <div className="reading-translation-option">
-                  <input
-                    id="reading-translation"
-                    type="checkbox"
-                    checked={readingTranslation}
-                    onChange={(event) => {
-                      const checked = event.target.checked;
-                      setReadingTranslation(checked);
-                      saveSettings(bookId, { translation: checked }).catch(() => setReadingMessage("保存阅读设置失败"));
-                    }}
-                  />
-                  <label htmlFor="reading-translation">生成中文翻译</label>
-                </div>
-                <div className="reading-translation-option">
-                  <input
-                    id="reading-questions"
-                    type="checkbox"
-                    checked={readingQuestionsEnabled}
-                    onChange={(event) => {
-                      const checked = event.target.checked;
-                      setReadingQuestionsEnabled(checked);
-                      saveSettings(bookId, { questions: checked }).catch(() => setReadingMessage("保存阅读设置失败"));
-                    }}
-                  />
-                  <label htmlFor="reading-questions">同时生成阅读题</label>
-                </div>
-                <p className="reading-option-hint">会额外调用一次 AI，生成 3～5 道题</p>
-              </div>
-            </div>
-
-            <div className="reading-selection-panel">
-              <div className="reading-selection-heading">
+            <div className="reading-settings-body">
+              <div className="reading-heading">
                 <div>
-                  <p className="eyebrow">本次使用</p>
-                  <strong>{readingSelection.length} 个单词</strong>
+                  <h2>AI 阅读</h2>
+                  <p>根据今日已背诵单词生成英语阅读。</p>
                 </div>
-                <span>每次最多自动选择 {MAX_READING_WORDS} 个未生成单词</span>
               </div>
-              {readingSelection.length ? (
-                <details className="reading-word-details">
-                  <summary>查看本次使用的单词</summary>
-                  <div className="reading-word-list">
-                    {readingSelection.map((word) => <span key={`${word.id}-${word.spelling}`}>{word.spelling}</span>)}
-                  </div>
-                </details>
-              ) : (
-                <p className="reading-empty-note">
-                  {todayItems.length === 0 ? "请先重新读取今日已背诵单词" : "今日已背诵单词均已有对应阅读"}
-                </p>
-              )}
+
+              <div className="reading-stat-grid">
+                <div><strong>{todayItems.length}</strong><span>今日已背诵</span></div>
+                <div><strong>{generatedTodayCount}</strong><span>已生成阅读</span></div>
+                <div><strong>{pendingTodayCount}</strong><span>待生成阅读</span></div>
+              </div>
+
+              <div className="reading-controls">
+                <div className="reading-control">
+                  <label className="field-label" htmlFor="reading-article-type">文章类型</label>
+                  <select
+                    id="reading-article-type"
+                    value={readingArticleType}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setReadingArticleType(value);
+                      saveSettings(bookId, { articleType: value }).catch(() => setReadingMessage("保存阅读设置失败"));
+                    }}
+                  >
+                    {READING_ARTICLE_TYPES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                  </select>
+                </div>
+                <div className="reading-control">
+                  <label className="field-label" htmlFor="reading-length">文章长度</label>
+                  <select
+                    id="reading-length"
+                    value={readingLength}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setReadingLength(value);
+                      saveSettings(bookId, { length: value }).catch(() => setReadingMessage("保存阅读设置失败"));
+                    }}
+                  >
+                    {READING_LENGTHS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                  </select>
+                </div>
+                <div className="reading-reading-options">
+                  <label className="reading-translation-option">
+                    <input
+                      id="reading-translation"
+                      type="checkbox"
+                      checked={readingTranslation}
+                      onChange={(event) => {
+                        const checked = event.target.checked;
+                        setReadingTranslation(checked);
+                        saveSettings(bookId, { translation: checked }).catch(() => setReadingMessage("保存阅读设置失败"));
+                      }}
+                    />
+                    <OptionCheck />
+                    <span>生成中文翻译</span>
+                  </label>
+                  <label className="reading-translation-option">
+                    <input
+                      id="reading-questions"
+                      type="checkbox"
+                      checked={readingQuestionsEnabled}
+                      onChange={(event) => {
+                        const checked = event.target.checked;
+                        setReadingQuestionsEnabled(checked);
+                        saveSettings(bookId, { questions: checked }).catch(() => setReadingMessage("保存阅读设置失败"));
+                      }}
+                    />
+                    <OptionCheck />
+                    <span>同时生成阅读题</span>
+                  </label>
+                </div>
+              </div>
+
             </div>
 
-            <div className="reading-actions">
-              <button
-                className="secondary-button reading-action-button"
-                type="button"
-                disabled={readingLoading || readingBusy || readingQuestionsBusy}
-                onClick={() => loadTodayReading(true)}
-              >
-                {readingLoading ? "读取中…" : "重新读取"}
-              </button>
-              <button
-                className={readingBusy ? "secondary-button reading-action-button" : "primary-action reading-action-button"}
-                type="button"
-                disabled={readingLoading || (!readingBusy && (readingQuestionsBusy || readingSelection.length === 0))}
-                onClick={readingBusy ? pauseReadingGeneration : currentArticle ? generateNextReading : generateSelectedReading}
-              >
-                {readingBusy ? "暂停生成" : currentArticle ? "生成下一篇" : "生成 AI 阅读"}
-              </button>
+            <div className="reading-action-footer">
+              <div className="reading-actions">
+                <button
+                  className="secondary-button reading-action-button"
+                  type="button"
+                  disabled={readingLoading || readingBusy || readingQuestionsBusy}
+                  onClick={() => loadTodayReading(true)}
+                >
+                  {readingLoading ? "读取中…" : "重新读取"}
+                </button>
+                <button
+                  className={readingBusy ? "secondary-button reading-action-button" : "primary-action reading-action-button"}
+                  type="button"
+                  disabled={readingCancelling || readingLoading || (!readingBusy && (readingQuestionsBusy || readingSelection.length === 0))}
+                  onClick={readingBusy ? pauseReadingGeneration : currentArticle ? generateNextReading : generateSelectedReading}
+                >
+                  {readingCancelling ? "正在暂停…" : readingBusy ? "暂停生成" : currentArticle ? "生成下一篇" : "生成 AI 阅读"}
+                </button>
+              </div>
+              {readingMessage ? <p className={`reading-message is-${readingMessageKind}`} role="status">{readingMessage}</p> : null}
             </div>
-            {readingMessage ? <p className={`reading-message is-${readingMessageKind}`} role="status">{readingMessage}</p> : null}
 
           </section>
 
@@ -1602,8 +1699,8 @@ function App() {
 
             {readingRightView === "current" ? (
               <>
-                {renderCurrentReadingArticle()}
-            {currentArticle?.questions?.length ? (
+                {readingBusy || !currentArticle ? renderReadingPreparation() : renderCurrentReadingArticle()}
+            {!readingBusy && currentArticle?.questions?.length ? (
               <section className="reading-questions" aria-label="阅读理解题">
                 <div className="reading-questions-heading">
                   <div>
@@ -1637,45 +1734,43 @@ function App() {
             ) : (
               <>
             <div className="history-heading">
-              <div>
-                <p className="eyebrow">本机记录</p>
-                <h3>阅读历史</h3>
-              </div>
-              <span className="count-badge">{readingHistory.length} 篇</span>
+              <h3>最近 {readingHistory.length} 篇阅读</h3>
+              <button className="history-refresh reading-history-refresh" type="button"
+                aria-label={readingHistoryLoading ? "正在刷新阅读历史" : "刷新阅读历史"}
+                title="刷新阅读历史" disabled={readingHistoryLoading || readingBusy || readingQuestionsBusy}
+                onClick={() => loadReadingHistory(true)}>
+                <RefreshIcon />
+              </button>
             </div>
-            <p className="history-privacy">只保存文章、日期和单词 ID，不保存墨墨 Token 或各 AI 服务商 API Key。</p>
+            <p className="history-privacy">最多保留最近 10 次，不保存墨墨 Token 或各 AI 服务商 API Key。</p>
             {readingHistory.length ? (
               <div className="reading-history-list">
-                {readingHistory.slice(0, 8).map((entry) => (
-                  <details className="reading-history-item" key={entry.id}>
-                    <summary>
-                      <span>
-                        <strong>{readingArticleTypeLabel(entry.articleType)}</strong>
-                        <small>
-                          {formatHistoryTime(entry.createdAt)} · {entry.words?.length || 0} 个单词
-                          {entry.questions?.length ? ` · ${entry.questions.length} 道题` : ""}
-                        </small>
-                      </span>
-                      <span className="reading-history-summary-actions">
-                        <label
-                          className="reading-highlight-option reading-heading-highlight-option"
-                          title="标记本篇词汇"
-                          onClick={(event) => event.stopPropagation()}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={historyHighlightState[entry.id] !== false}
-                            onChange={(event) => setHistoryHighlightState((current) => ({
-                              ...current,
-                              [entry.id]: event.target.checked,
-                            }))}
-                          />
-                          <span>标记词汇</span>
-                        </label>
-                        <span className="history-status">已生成</span>
+                {readingHistory.map((entry) => (
+                  <details className="reading-history-item" key={entry.id} open={expandedReadingHistoryId === entry.id}>
+                    <summary onClick={(event) => {
+                      event.preventDefault();
+                      setExpandedReadingHistoryId((current) => current === entry.id ? "" : entry.id);
+                    }}>
+                      <span className="reading-history-summary-text">
+                        <span className="reading-history-meta">
+                          <strong>{readingArticleTypeLabel(entry.articleType)} · {READING_LENGTHS.find((item) => item.value === entry.length)?.label || "中等"}</strong>
+                          <time>{readingHistoryTime(entry.createdAt)}</time>
+                        </span>
+                        <span className="reading-history-excerpt">{readingEnglishText(entry).replace(/\s+/g, " ").trim()}</span>
+                        <span className="reading-history-bottom">
+                          <small>{entry.words?.length || 0} 个单词{entry.questions?.length ? ` · ${entry.questions.length} 道题` : ""}</small>
+                          <span className="reading-history-chevron" aria-hidden="true">›</span>
+                        </span>
                       </span>
                     </summary>
                     <div className="reading-history-content">
+                      <div className="reading-history-toolbar">
+                        <HighlightToggle active={historyHighlightState[entry.id] !== false}
+                          onChange={(active) => setHistoryHighlightState((current) => ({
+                              ...current,
+                              [entry.id]: active,
+                            }))} />
+                      </div>
                       {readingWordSummary(entry).total ? (
                         <p className="reading-vocabulary-summary">
                           文章中找到 {readingWordSummary(entry).used}/{readingWordSummary(entry).total} 个本篇词汇
@@ -1746,7 +1841,94 @@ function App() {
           </section>
         </main>
       ) : (
-        <main className="ai-settings-layout" aria-label="AI 设置">
+        <main key="settings" className="ai-settings-layout settings-layout" aria-label="设置">
+          <section className="momo-account-card" aria-labelledby="momo-account-title">
+            <div className="ai-settings-heading">
+              <p className="eyebrow">墨墨连接配置</p>
+              <h2 id="momo-account-title">墨墨账号</h2>
+              <p>首次填写并保存 Token 后，导入和 AI 阅读会自动使用。</p>
+            </div>
+            <p className={`momo-account-status${token.trim() ? " is-configured" : ""}`}>
+              {token.trim() ? "已保存 Token" : "未配置 Token"}
+            </p>
+            <div className="token-field">
+              <label className="field-label" htmlFor="momo-token">墨墨 Token</label>
+              <a
+                className="token-help"
+                href={TOKEN_HELP_URL}
+                target="_blank"
+                rel="noreferrer"
+                onClick={openTokenHelp}
+              >
+                如何获取墨墨 Token
+              </a>
+              <div className="secret-input-row">
+                <div className="token-input-control">
+                  <input
+                    ref={momoTokenInputRef}
+                    id="momo-token"
+                    type={showMomoToken ? "text" : "password"}
+                    value={momoTokenDraft}
+                    autoComplete="off"
+                    spellCheck={false}
+                    disabled={momoAccountBusy}
+                    placeholder="粘贴 Token"
+                    onChange={(event) => {
+                      setMomoTokenDraft(event.target.value);
+                      setMomoMessage("");
+                    }}
+                  />
+                  <button
+                    className="token-visibility-button"
+                    type="button"
+                    disabled={momoAccountBusy}
+                    aria-label={showMomoToken ? "隐藏墨墨 Token" : "显示墨墨 Token"}
+                    title={showMomoToken ? "隐藏 Token" : "显示 Token"}
+                    aria-controls="momo-token"
+                    aria-pressed={showMomoToken}
+                    onClick={() => {
+                      setShowMomoToken((current) => !current);
+                      momoTokenInputRef.current?.focus();
+                    }}
+                  >
+                    <TokenVisibilityIcon visible={showMomoToken} />
+                  </button>
+                </div>
+                <button
+                  className="field-action"
+                  type="button"
+                  disabled={momoAccountBusy}
+                  aria-label="粘贴墨墨 Token"
+                  onClick={pasteMomoToken}
+                >
+                  {momoPasting ? "粘贴中…" : "粘贴"}
+                </button>
+              </div>
+              <p className="field-hint">修改后点击保存才会生效；Token 失效时在这里更新。</p>
+            </div>
+            <div className="ai-actions momo-account-actions">
+              <button
+                className="secondary-button"
+                type="button"
+                disabled={momoAccountBusy || (!token && !momoTokenDraft)}
+                onClick={() => saveMomoConfiguration(true)}
+              >
+                清除 Token
+              </button>
+              <button
+                className="primary-action"
+                type="button"
+                disabled={momoAccountBusy}
+                onClick={() => saveMomoConfiguration()}
+              >
+                {momoSaving ? "保存中…" : "保存 Token"}
+              </button>
+            </div>
+            {momoMessage ? (
+              <p className={`ai-message is-${momoMessageKind}`} role="status">{momoMessage}</p>
+            ) : null}
+            <p className="ai-privacy-note">Token 仅保存在本机，不写入卡片或导入历史。</p>
+          </section>
           <section className="ai-settings-card">
             <div className="ai-settings-heading">
               <p className="eyebrow">AI 服务配置</p>
@@ -1759,6 +1941,7 @@ function App() {
                 <label className="field-label" htmlFor="ai-provider">AI 服务商</label>
                 <select
                   id="ai-provider"
+                  disabled={aiConfigurationBusy}
                   value={aiProvider}
                   onChange={(event) => switchAiProvider(event.target.value)}
                 >
@@ -1766,59 +1949,111 @@ function App() {
                     <option key={provider.value} value={provider.value}>{provider.label}</option>
                   ))}
                 </select>
-                <p className="field-hint">切换服务商会自动带入对应 API 地址和推荐模型。</p>
+                <p className="field-hint">{usesMnChatAi ? "使用 MN ChatAI 中当前配置的模型，无需在这里填写 API Key。" : "切换服务商会自动带入对应 API 地址和推荐模型。"}</p>
               </div>
 
-              <div className="ai-field">
-                <label className="field-label" htmlFor="ai-api-key">{aiProviderDefinition(aiProvider).label} API Key</label>
-                <div className="secret-input-row">
-                  <input
-                    id="ai-api-key"
-                    type={showAiKey ? "text" : "password"}
-                    value={aiApiKey}
-                    autoComplete="off"
-                    placeholder={`粘贴 ${aiProviderDefinition(aiProvider).label} API Key`}
-                    onChange={(event) => setAiApiKey(event.target.value)}
-                  />
-                  <button
-                    className="field-action"
-                    type="button"
-                    aria-label={showAiKey ? "隐藏 API Key" : "显示 API Key"}
-                    onClick={() => setShowAiKey((current) => !current)}
-                  >
-                    {showAiKey ? "隐藏" : "显示"}
-                  </button>
-                </div>
-              </div>
+              {usesMnChatAi ? (
+                <>
+                  <div className="ai-field">
+                    <label className="field-label" htmlFor="mnchatai-source">MN ChatAI 服务商</label>
+                    <select id="mnchatai-source" value={mnChatAiSource} disabled={aiConfigurationBusy}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        setMnChatAiSource(value);
+                        setMnChatAiModel(mnChatAiCatalog?.sources?.find((item) => item.value === value)?.models?.[0]?.value || "");
+                        setAiMessage("");
+                      }}>
+                      <option value="" disabled>{mnChatAiLoading ? "正在读取…" : "请选择服务商"}</option>
+                      {(mnChatAiCatalog?.sources || []).map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                    </select>
+                  </div>
+                  <div className="ai-field">
+                    <label className="field-label" htmlFor="mnchatai-model">模型</label>
+                    <div className="secret-input-row">
+                      <select id="mnchatai-model" value={mnChatAiModel} disabled={aiConfigurationBusy || !mnChatAiModels.length}
+                        onChange={(event) => { setMnChatAiModel(event.target.value); setAiMessage(""); }}>
+                        <option value="" disabled>请选择模型</option>
+                        {mnChatAiModels.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                      </select>
+                      <button className="field-action" type="button" disabled={aiConfigurationBusy} onClick={loadMnChatAiModels}>刷新</button>
+                    </div>
+                    <p className="field-hint">当前使用：{mnChatAiCatalog?.currentModel ? `${mnChatAiCatalog.currentSource} · ${mnChatAiCatalog.currentModel}` : "尚未读取"}</p>
+                    <p className="field-hint">保存后同步修改 MN ChatAI 的默认模型。文章在后台生成，结果直接显示在本插件中。</p>
+                    {mnChatAiError ? <p className="ai-message is-error" role="status">{mnChatAiError}</p> : null}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="ai-field">
+                    <label className="field-label" htmlFor="ai-api-key">{aiProviderDefinition(aiProvider).label} API Key</label>
+                    <div className="secret-input-row">
+                      <div className="token-input-control">
+                      <input
+                        ref={aiKeyInputRef}
+                        id="ai-api-key"
+                        type={showAiKey ? "text" : "password"}
+                        value={aiApiKey}
+                        autoComplete="off"
+                        spellCheck={false}
+                        disabled={aiConfigurationBusy}
+                        placeholder={`粘贴 ${aiProviderDefinition(aiProvider).label} API Key`}
+                        onChange={(event) => setAiApiKey(event.target.value)}
+                      />
+                      <button
+                        className="token-visibility-button"
+                        type="button"
+                        disabled={aiConfigurationBusy}
+                        aria-label={showAiKey ? "隐藏 API Key" : "显示 API Key"}
+                        title={showAiKey ? "隐藏 API Key" : "显示 API Key"}
+                        aria-controls="ai-api-key"
+                        aria-pressed={showAiKey}
+                        onClick={() => {
+                          setShowAiKey((current) => !current);
+                          aiKeyInputRef.current?.focus();
+                        }}
+                      >
+                        <TokenVisibilityIcon visible={showAiKey} />
+                      </button>
+                      </div>
+                      <button className="field-action" type="button" disabled={aiConfigurationBusy}
+                        aria-label="粘贴 API Key" onClick={pasteAiKey}>
+                        {aiPasting ? "粘贴中…" : "粘贴"}
+                      </button>
+                    </div>
+                  </div>
 
-              <div className="ai-field">
-                <label className="field-label" htmlFor="ai-base-url">API 地址</label>
-                <input
-                  id="ai-base-url"
-                  type="url"
-                  value={aiBaseUrl}
-                  placeholder={aiProviderDefinition(aiProvider).baseUrl || "https://example.com/v1"}
-                  onChange={(event) => setAiBaseUrl(event.target.value)}
-                />
-                <p className="field-hint">已自动填入默认地址，也可以改为兼容 OpenAI 格式的代理地址。</p>
-              </div>
+                  <div className="ai-field">
+                    <label className="field-label" htmlFor="ai-base-url">API 地址</label>
+                    <input
+                      id="ai-base-url"
+                      disabled={aiConfigurationBusy}
+                      type="url"
+                      value={aiBaseUrl}
+                      placeholder={aiProviderDefinition(aiProvider).baseUrl || "https://example.com/v1"}
+                      onChange={(event) => setAiBaseUrl(event.target.value)}
+                    />
+                    <p className="field-hint">已自动填入默认地址，也可以改为兼容 OpenAI 格式的代理地址。</p>
+                  </div>
 
-              <div className="ai-field">
-                <label className="field-label" htmlFor="ai-model">模型</label>
-                <input
-                  id="ai-model"
-                  value={aiModel}
-                  placeholder={aiProviderDefinition(aiProvider).model || "填写服务商模型名称"}
-                  onChange={(event) => setAiModel(event.target.value)}
-                />
-              </div>
+                  <div className="ai-field">
+                    <label className="field-label" htmlFor="ai-model">模型</label>
+                    <input
+                      id="ai-model"
+                      disabled={aiConfigurationBusy}
+                      value={aiModel}
+                      placeholder={aiProviderDefinition(aiProvider).model || "填写服务商模型名称"}
+                      onChange={(event) => setAiModel(event.target.value)}
+                    />
+                  </div>
+                </>
+              )}
             </div>
 
             <div className="ai-actions">
-              <button className="secondary-button" type="button" disabled={aiTesting || aiSaving} onClick={testAiConnection}>
+              <button className="secondary-button" type="button" disabled={aiConfigurationBusy || usesMnChatAi && (!mnChatAiSelectionValid || mnChatAiSelectionChanged)} onClick={testAiConnection}>
                 {aiTesting ? "测试中…" : "测试连接"}
               </button>
-              <button className="primary-action" type="button" disabled={aiSaving || aiTesting} onClick={saveAiConfiguration}>
+              <button className="primary-action" type="button" disabled={aiConfigurationBusy} onClick={saveAiConfiguration}>
                 {aiSaving ? "保存中…" : "保存设置"}
               </button>
             </div>
@@ -1828,8 +2063,52 @@ function App() {
             ) : null}
             <p className="ai-privacy-note">各服务商 API Key 仅保存在本机，用于生成 AI 阅读文章，不会发送给墨墨或写入导入历史。</p>
           </section>
+          <section className="history-management-card" aria-labelledby="history-management-title">
+            <div className="ai-settings-heading">
+              <p className="eyebrow">本机数据</p>
+              <h2 id="history-management-title">历史管理</h2>
+              <p>导入历史和 AI 阅读历史各保留最近 10 次。</p>
+            </div>
+            {[
+              { value: "import", label: "导入历史", count: historyEntries.length, loading: historyLoading },
+              { value: "reading", label: "AI 阅读历史", count: readingHistory.length, loading: readingHistoryLoading },
+            ].map((item) => (
+              <div className="history-management-row" key={item.value}>
+                <div>
+                  <h3>{item.label}</h3>
+                  <p>{item.loading ? "正在读取记录…" : `当前保存 ${item.count} 次记录`}</p>
+                </div>
+                <button
+                  className="history-clear-button"
+                  type="button"
+                  disabled={historyMaintenanceBusy || Boolean(historyClearTarget) || item.count === 0}
+                  onClick={() => {
+                    setHistoryMessage("");
+                    setHistoryClearTarget(item.value);
+                  }}
+                >
+                  {clearingHistory === item.value ? "清除中…" : `清除${item.label}`}
+                </button>
+              </div>
+            ))}
+            {historyClearTarget ? (
+              <div className="history-clear-confirmation" role="group" aria-label="确认清除历史">
+                <p>
+                  {historyClearTarget === "import"
+                    ? "确认清除本机全部导入历史？清除后将无法从历史重试失败项。"
+                    : "确认清除本机全部 AI 阅读历史？当前文章和已生成统计也会重置。"}
+                </p>
+                <div>
+                  <button className="secondary-button" type="button" onClick={() => setHistoryClearTarget("")}>取消</button>
+                  <button className="history-clear-button" type="button" disabled={historyMaintenanceBusy} onClick={clearSelectedHistory}>确认清除</button>
+                </div>
+              </div>
+            ) : null}
+            {historyMessage ? <p className={`ai-message is-${historyMessageKind}`} role="status">{historyMessage}</p> : null}
+          </section>
         </main>
       )}
+      </div>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 var __MN_MOMO_IMPORT_HISTORY_GLOBAL__ = (function () {
   const SCHEMA_VERSION = 1;
-  const MAX_HISTORY_ENTRIES = 20;
-  const DATA_DIRECTORY_NAME = "MoMoImport";
+  const MAX_HISTORY_ENTRIES = 10;
+  const DATA_DIRECTORY_NAME = "MoMoBridge";
   const HISTORY_FILE_NAME = "import-history.json";
 
   function dataDirectoryPath() {
@@ -346,6 +346,10 @@ var __MN_MOMO_IMPORT_HISTORY_GLOBAL__ = (function () {
     return readDocument().entries.map(withRetrySummary);
   }
 
+  function clearHistory() {
+    writeDocument(defaultDocument());
+  }
+
   function findHistory(id) {
     const target = String(id || "");
     return readDocument().entries.find(function (entry) {
@@ -354,6 +358,7 @@ var __MN_MOMO_IMPORT_HISTORY_GLOBAL__ = (function () {
   }
 
   return {
+    clearHistory,
     findHistory,
     listHistory,
     recordImport,

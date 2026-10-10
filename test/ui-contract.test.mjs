@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const source = await readFile(new URL("../web/src/App.jsx", import.meta.url), "utf8");
+const source = ((await readFile(new URL("../web/src/App.jsx", import.meta.url), "utf8"))
+  + "\n" + await readFile(new URL("../web/src/components/ImportContent.jsx", import.meta.url), "utf8")
+  + "\n" + await readFile(new URL("../web/src/components/HighlightToggle.jsx", import.meta.url), "utf8"))
+  .replace(/\r\n/g, "\n");
 const styleSource = await readFile(new URL("../web/src/styles.css", import.meta.url), "utf8");
 const panelSource = await readFile(new URL("../src/WebPanelController.js", import.meta.url), "utf8");
 const htmlSource = await readFile(new URL("../web/index.html", import.meta.url), "utf8");
@@ -10,12 +13,12 @@ const webBuildSource = await readFile(new URL("../scripts/web-build.js", import.
 const addonManifest = JSON.parse(await readFile(new URL("../src/mnaddon.json", import.meta.url), "utf8"));
 const packageSource = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
 
-test("Panel uses the product name and keeps only the compact web subtitle", () => {
+test("Panel keeps the product name without a duplicate web banner", () => {
   assert.match(panelSource, /controller\.titleLabel\.text = "MoMo Bridge"/);
   assert.doesNotMatch(panelSource, /__MN_WEB_PANEL_TITLE__/);
-  assert.match(source, /MarginNote → 墨墨背单词/);
+  assert.doesNotMatch(source, /MarginNote → 墨墨背单词/);
   assert.doesNotMatch(source, /单词书导入/);
-  assert.match(source, /<h1>MoMo Bridge<\/h1>/);
+  assert.doesNotMatch(source, /<h1>MoMo Bridge<\/h1>|className="app-heading"|className="status-dot"/);
   assert.match(htmlSource, /<title>MoMo Bridge<\/title>/);
   assert.match(webBuildSource, /<title>MoMo Bridge<\/title>/);
   assert.equal(addonManifest.title, "MoMo Bridge");
@@ -71,9 +74,9 @@ test("AI settings supports multiple providers and keeps provider profiles separa
 test("Three pages share heading, history, and mobile layout foundations", () => {
   assert.match(styleSource, /\.ai-settings-heading\s*\{[^}]*padding:\s*0;[^}]*border:\s*0;/s);
   assert.match(styleSource, /\.ai-settings-heading p:last-child\s*\{[^}]*font-size:\s*12px;[^}]*line-height:\s*1\.5;/s);
-  assert.match(styleSource, /\.reading-history-item\s*\{[^}]*border-radius:\s*6px;/s);
-  assert.match(styleSource, /\.reading-history-item > summary\s*\{[^}]*justify-content:\s*space-between;[^}]*padding:\s*9px 10px;/s);
-  assert.match(styleSource, /\.import-layout,\s*\n\s*\.reading-layout,\s*\n\s*\.ai-settings-layout\s*\{[^}]*padding:\s*18px;/s);
+  assert.match(styleSource, /\.reading-history-item\s*\{[^}]*border-radius:\s*12px;/s);
+  assert.match(styleSource, /\.reading-history-item > summary\s*\{[^}]*justify-content:\s*space-between;[^}]*padding:\s*14px;/s);
+  assert.match(styleSource, /\.import-layout,\s*\n\s*\.reading-layout\s*\{[^}]*padding:\s*18px;/s);
   assert.doesNotMatch(styleSource, /@media[\s\S]*\.import-options\s*\{[^}]*grid-template-columns:\s*1fr;/s);
   assert.match(source, /各 AI 服务商 API Key/);
 });
@@ -99,12 +102,12 @@ test("AI 阅读页面只展示已背诵数据并按最多三十个单词生成",
   assert.match(source, /pauseReadingGeneration/);
   assert.match(source, /readingQuestionsEnabled/);
   assert.match(source, /同时生成阅读题/);
-  assert.match(source, /会额外调用一次 AI/);
+  assert.doesNotMatch(source, /会额外调用一次 AI/);
   assert.match(source, /id="reading-translation"/);
   assert.match(source, /id="reading-questions"/);
-  assert.match(source, /标记词汇/);
-  assert.match(source, /title="标记今日词汇"/);
-  assert.match(source, /title="标记本篇词汇"/);
+  assert.match(source, /高亮词汇/);
+  assert.match(source, /aria-pressed=\{active\}/);
+  assert.match(source, /<HighlightToggle active=\{historyHighlightState\[entry.id\] !== false\}/);
   assert.match(source, /未在文章中发现/);
   assert.match(source, /显示本段翻译/);
   assert.match(source, /显示全文翻译/);
@@ -120,19 +123,20 @@ test("AI 阅读页面只展示已背诵数据并按最多三十个单词生成",
   assert.match(source, /function renderCurrentReadingArticle\(\)/);
   assert.match(source, /renderCurrentReadingArticle\(\)/);
   assert.match(source, /readingRightView/);
-  assert.match(source, /className=\{`app-shell\$\{activePage === "reading" \? " reading-page-shell" : ""\}`\}/);
+  assert.match(source, /className=\{`app-shell\$\{activePage === "reading" \? " reading-page-shell" : activePage === "import" \? " import-page-shell" : ""\}`\}/);
   assert.match(source, /本次阅读/);
   assert.match(source, /阅读历史/);
   assert.match(styleSource, /\.reading-view-tabs\s*\{/);
-  assert.match(styleSource, /@media \(min-width:\s*701px\)\s*\{[^}]*\.reading-page-shell\s*\{[^}]*height:\s*100vh;[^}]*overflow:\s*hidden/s);
+  assert.match(styleSource, /\.app-shell\s*\{[^}]*height:\s*100vh;[^}]*overflow:\s*hidden/s);
+  assert.match(styleSource, /\.page-content\s*\{[^}]*overflow-y:\s*auto/s);
   assert.match(styleSource, /\.reading-page-shell \.reading-layout\s*\{[^}]*flex:\s*1;[^}]*min-height:\s*0/s);
-  assert.match(styleSource, /\.reading-page-shell \.reading-card,\s*\.reading-page-shell \.reading-history-card\s*\{[^}]*overflow-y:\s*auto;[^}]*overscroll-behavior:\s*contain/s);
+  assert.match(styleSource, /\.reading-page-shell \.reading-settings-body,\s*\.reading-page-shell \.reading-history-card,[^{]*\{[^}]*overflow-y:\s*auto;[^}]*overscroll-behavior:\s*contain/s);
   assert.match(styleSource, /\.reading-page-shell \.reading-view-tabs\s*\{[^}]*position:\s*sticky;[^}]*top:\s*0/s);
   assert.doesNotMatch(source, /reading-generation-action/);
   assert.doesNotMatch(source, /reading-pause-button/);
   assert.match(styleSource, /\.reading-word-highlight/);
   assert.match(styleSource, /\.reading-heading-highlight-option/);
-  assert.match(styleSource, /\.reading-history-summary-actions/);
+  assert.match(styleSource, /\.reading-history-toolbar/);
   assert.match(styleSource, /\.reading-action-button\s*\{[^}]*width:\s*100%/s);
   assert.doesNotMatch(styleSource, /\.reading-actions \.reading-action-button\s*\{/);
   assert.match(styleSource, /\.reading-article-actions\s*\{[^}]*grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\)/s);
@@ -145,15 +149,15 @@ test("AI 阅读页面只展示已背诵数据并按最多三十个单词生成",
   assert.match(styleSource, /\.reading-paragraph-translation/);
   assert.match(styleSource, /\.reading-history-translation/);
   assert.match(styleSource, /\.reading-article-paragraphs,\s*\.reading-history-paragraphs\s*\{[^}]*gap:\s*14px/s);
-  assert.match(styleSource, /\.reading-history-paragraphs\s*\{[^}]*margin-top:\s*8px;[^}]*gap:\s*4px/s);
-  assert.match(styleSource, /\.reading-history-translation\s*\{[^}]*margin-top:\s*2px;[^}]*padding:\s*2px 6px;[^}]*border-left:\s*3px solid var\(--brand\);[^}]*font-size:\s*10px;[^}]*line-height:\s*1\.25/s);
-  assert.match(styleSource, /\.reading-history-translation > summary\s*\{[^}]*font-size:\s*10px/s);
+  assert.match(styleSource, /\.reading-history-paragraphs\s*\{[^}]*margin-top:\s*13px/s);
+  assert.match(styleSource, /\.reading-history-translation\s*\{[^}]*margin-top:\s*8px;[^}]*padding:\s*8px 10px;[^}]*border-left:\s*3px solid var\(--brand\);[^}]*font-size:\s*12px;[^}]*line-height:\s*1\.6/s);
+  assert.match(styleSource, /\.reading-history-translation > summary\s*\{[^}]*font-size:\s*11px/s);
   assert.match(styleSource, /\.reading-paragraph-translation > summary,\s*\.reading-history-translation > summary\s*\{[^}]*display:\s*flex;[^}]*gap:\s*0;[^}]*justify-content:\s*flex-start/s);
   assert.doesNotMatch(styleSource, /\.reading-paragraph-translation > summary::before/);
   assert.doesNotMatch(styleSource, /\.reading-history-translation > summary::before/);
   assert.match(source, /<details className="reading-history-translation">\s*<summary>显示本段翻译<\/summary>\s*<p>\{paragraph\.translation\}<\/p>/s);
   assert.doesNotMatch(source, /<small>\{paragraph\.translation\}<\/small>/);
-  assert.match(styleSource, /\.reading-history-content \.reading-history-translation p\s*\{[^}]*margin:\s*3px 0 0;[^}]*font-size:\s*10px;[^}]*line-height:\s*1\.4/s);
+  assert.match(styleSource, /\.reading-history-content \.reading-history-translation p\s*\{[^}]*margin:\s*6px 0 0;[^}]*font-size:\s*12px;[^}]*line-height:\s*1\.6/s);
   assert.doesNotMatch(styleSource, /\.reading-history-card > \.history-heading\s*\{[^}]*border-top:/s);
   assert.match(source, /className="history-empty reading-history-empty">生成文章后/);
   assert.match(styleSource, /\.reading-history-empty\s*\{[^}]*padding:\s*0;[^}]*border:\s*0/s);
@@ -224,7 +228,7 @@ test("Import UI exposes independent word, example, and study checkboxes on one r
   assert.match(source, /const \[addExamples, setAddExamples\] = useState\(false\)/);
   assert.match(source, /const \[addStudy, setAddStudy\] = useState\(false\)/);
   assert.match(source, /const \[advanceStudy, setAdvanceStudy\] = useState\(false\)/);
-  assert.equal((source.match(/type="checkbox"/g) || []).length, 8);
+  assert.equal((source.match(/type="checkbox"/g) || []).length, 6);
   assert.match(source, /添加单词/);
   assert.match(source, /添加例句/);
   assert.match(source, /添加背诵/);
@@ -261,15 +265,14 @@ test("Advance review is subordinate to study import and resets when study is dis
   assert.match(source, /需 10 级账号并开启墨墨自动同步/);
 });
 
-test("Advance review help opens to the right in two bounded lines", () => {
-  assert.match(styleSource, /\.option-info p\s*{[^}]*left:\s*calc\(100% \+ 6px\)/s);
-  assert.match(styleSource, /\.option-info p\s*{[^}]*right:\s*auto/s);
-  assert.match(styleSource, /\.option-info p\s*{[^}]*top:\s*50%/s);
-  assert.match(styleSource, /\.option-info p\s*{[^}]*transform:\s*translateY\(-50%\)/s);
-  assert.match(styleSource, /\.option-info p\s*{[^}]*width:\s*168px/s);
+test("Study help opens below the compact row and wraps within the panel", () => {
+  assert.match(styleSource, /\.option-info p\s*{[^}]*left:\s*0/s);
+  assert.match(styleSource, /\.option-info p\s*{[^}]*top:\s*calc\(100% \+ 6px\)/s);
+  assert.match(styleSource, /\.option-info p\s*{[^}]*width:\s*100%/s);
+  assert.match(styleSource, /\.option-info p\s*{[^}]*max-width:\s*320px/s);
   assert.match(styleSource, /\.option-info-line\s*{[^}]*display:\s*block/s);
-  assert.match(styleSource, /\.option-info-line\s*{[^}]*white-space:\s*nowrap/s);
-  assert.equal((source.match(/className="option-info-line"/g) || []).length, 2);
+  assert.match(styleSource, /\.option-info-line\s*{[^}]*white-space:\s*normal/s);
+  assert.equal((source.match(/className="option-info-line"/g) || []).length, 4);
 });
 
 test("Example import shows a subordinate duration notice only when selected", () => {
@@ -278,19 +281,20 @@ test("Example import shows a subordinate duration notice only when selected", ()
   assert.match(source, /例句较多时会自动分批上传，所需时间通常比只添加单词更长/);
 });
 
-test("Study import explains the vocabulary limit only when selected", () => {
-  assert.match(source, /className="option-guidance study-limit-note"/);
+test("Study import keeps its limit in help and the switch on the right", () => {
+  assert.doesNotMatch(source, /className="option-guidance study-limit-note"/);
   assert.match(source, /添加背诵会占用墨墨账号的单词上限，达到上限后将无法继续添加/);
   assert.match(styleSource, /\.example-duration-note\s*{[^}]*align-items:\s*center/s);
-  assert.match(styleSource, /\.study-limit-note\s*{[^}]*align-items:\s*center/s);
   assert.match(styleSource, /\.study-advance-control\s*{[^}]*align-items:\s*center/s);
+  assert.match(styleSource, /\.study-advance-option\s*{[^}]*margin-left:\s*auto/s);
 });
 
 test("Import UI distinguishes existing words from example results", () => {
-  assert.match(source, /单词成功/);
-  assert.match(source, /单词已存在/);
-  assert.match(source, /单词失败/);
-  assert.match(source, /例句：成功/);
+  assert.match(source, /label: "单词"/);
+  assert.match(source, /label: "例句"/);
+  assert.match(source, /<th scope="col">成功<\/th>/);
+  assert.match(source, /<th scope="col">已存在<\/th>/);
+  assert.match(source, /<th scope="col">失败<\/th>/);
 });
 
 test("Import UI previews the dynamic example origin", () => {
@@ -312,7 +316,7 @@ test("Import UI automatically queues example selections above ten", () => {
   assert.match(source, /MAX_EXAMPLES_PER_IMPORT = 10/);
   assert.doesNotMatch(source, /exampleLimitExceeded/);
   assert.match(source, /将自动分成/);
-  assert.match(source, /每批最多 \{MAX_EXAMPLES_PER_IMPORT\} 条/);
+  assert.match(source, /每批最多 \{maxExamplesPerImport\} 条/);
   assert.match(source, /onProgress\(progress\)/);
   assert.match(source, /正在处理第/);
   assert.match(source, /正在等待重试/);
@@ -324,6 +328,6 @@ test("Import UI loads persistent history and retries only failed items", () => {
   assert.match(source, /MNBridge\.send\("retryImportHistory"/);
   assert.match(source, /仅重试失败项/);
   assert.match(source, /历史保存在本机，不记录墨墨 Token/);
-  assert.match(source, /最多保留最近 20 次/);
+  assert.match(source, /最多保留最近 10 次/);
   assert.match(source, /墨墨背诵接口只返回数量/);
 });

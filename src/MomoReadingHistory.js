@@ -1,7 +1,7 @@
 var __MN_MOMO_READING_HISTORY_GLOBAL__ = (function () {
   const SCHEMA_VERSION = 1;
-  const MAX_HISTORY_ENTRIES = 50;
-  const DATA_DIRECTORY_NAME = "MoMoImport";
+  const MAX_HISTORY_ENTRIES = 10;
+  const DATA_DIRECTORY_NAME = "MoMoBridge";
   const HISTORY_FILE_NAME = "reading-history.json";
 
   function valueForKey(object, key) {
@@ -221,7 +221,12 @@ var __MN_MOMO_READING_HISTORY_GLOBAL__ = (function () {
     return readDocument().entries;
   }
 
+  function clearHistory() {
+    writeDocument(defaultDocument());
+  }
+
   return {
+    clearHistory,
     listHistory,
     recordArticle,
     recordQuestions,

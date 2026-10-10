@@ -8,7 +8,7 @@ const mainSource = await readFile(new URL("../src/main.js", import.meta.url), "u
 
 test("Import history is stored as an atomic JSON file in the addon document directory", () => {
   assert.match(historySource, /Application\.sharedInstance\(\)\.documentPath/);
-  assert.match(historySource, /MoMoImport/);
+  assert.match(historySource, /DATA_DIRECTORY_NAME = "MoMoBridge"/);
   assert.match(historySource, /import-history\.json/);
   assert.match(historySource, /NSFileManager\.defaultManager\(\)/);
   assert.match(historySource, /NSJSONSerialization\.dataWithJSONObjectOptions\(safeDocument, 0\)/);
@@ -16,7 +16,7 @@ test("Import history is stored as an atomic JSON file in the addon document dire
   assert.match(historySource, /function arrayItems\(list\)/);
   assert.match(historySource, /valueForKey\(parsed, "entries"\)/);
   assert.match(historySource, /writeToFileAtomically\(historyFilePath\(\), true\)/);
-  assert.match(historySource, /MAX_HISTORY_ENTRIES = 20/);
+  assert.match(historySource, /MAX_HISTORY_ENTRIES = 10/);
 });
 
 test("Import history never stores or accepts a Token field", () => {

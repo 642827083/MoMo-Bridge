@@ -297,6 +297,12 @@ var __MN_WEB_API_GLOBAL__ = (function () {
       width: Math.max(0, frame.width - 80),
       height: TITLE_HEIGHT,
     };
+    controller.closeButton.frame = {
+      x: Math.max(0, frame.width - TITLE_HEIGHT - 5),
+      y: 0,
+      width: TITLE_HEIGHT,
+      height: TITLE_HEIGHT,
+    };
     controller.webView.frame = {
       x: 0,
       y: TITLE_HEIGHT,
@@ -349,7 +355,8 @@ var __MN_WEB_API_GLOBAL__ = (function () {
     controller.titleLabel.autoresizingMask = (1 << 1);
     controller.titleBar.addSubview(controller.titleLabel);
 
-    controller.closeButton = new UIButton({ x: 5, y: 0, width: TITLE_HEIGHT, height: TITLE_HEIGHT });
+    controller.closeButton = new UIButton({ x: initWidth - TITLE_HEIGHT - 5, y: 0, width: TITLE_HEIGHT, height: TITLE_HEIGHT });
+    controller.closeButton.autoresizingMask = (1 << 0);
     controller.closeButton.setTitleForState("×", 0);
     controller.closeButton.setTitleColorForState(UIColor.grayColor(), 0);
     controller.closeButton.titleLabel.font = UIFont.systemFontOfSize(24);

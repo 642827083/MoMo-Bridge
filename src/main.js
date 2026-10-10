@@ -1,5 +1,6 @@
 JSB.require("WebDevServerConfig");
 JSB.require("MomoApi");
+JSB.require("MnChatAiApi");
 JSB.require("DeepSeekApi");
 JSB.require("MomoSelection");
 JSB.require("MomoImportHistory");

@@ -5,6 +5,7 @@ var __MN_DEEPSEEK_API_GLOBAL__ = (function () {
   const DEEPSEEK_TEST_TIMEOUT_SECONDS = 30;
   const DEEPSEEK_GENERATION_TIMEOUT_SECONDS = 180;
   const AI_PROVIDERS = [
+    { id: "mnchatai", label: "MN ChatAI", baseUrl: "", model: "当前配置模型" },
     {
       id: "deepseek",
       label: "DeepSeek",
@@ -50,7 +51,7 @@ var __MN_DEEPSEEK_API_GLOBAL__ = (function () {
   ];
 
   function providerDefinition(provider) {
-    return AI_PROVIDERS.find((item) => item.id === provider) || AI_PROVIDERS[0];
+    return AI_PROVIDERS.find((item) => item.id === provider) || AI_PROVIDERS.find((item) => item.id === DEFAULT_PROVIDER);
   }
 
   function normalizeProvider(value) {
@@ -130,6 +131,9 @@ var __MN_DEEPSEEK_API_GLOBAL__ = (function () {
     const source = settings && typeof settings === "object" ? settings : {};
     const provider = normalizeProvider(source.provider);
     const definition = providerDefinition(provider);
+    if (provider === "mnchatai") {
+      return { provider, apiKey: "", baseUrl: "", model: definition.model };
+    }
     return {
       provider,
       apiKey: typeof source.apiKey === "string" ? source.apiKey.trim().replace(/^Bearer\s+/i, "") : "",
@@ -240,6 +244,14 @@ var __MN_DEEPSEEK_API_GLOBAL__ = (function () {
 
   function testConnection(settings) {
     const config = normalizeSettings(settings);
+    if (config.provider === "mnchatai") {
+      const selection = __MN_MOMO_CHAT_AI_API_GLOBAL__.currentModel();
+      return __MN_MOMO_CHAT_AI_API_GLOBAL__.ask("请仅回复 OK。", "连接测试，请只回复 OK。").then(function () {
+        return { connected: true, modelAvailable: true, provider: config.provider,
+          providerLabel: "MN ChatAI", model: `${selection.source}: ${selection.model}`,
+          message: `连接成功，${selection.source} · ${selection.model} 可以生成文章` };
+      });
+    }
     if (!config.apiKey) return Promise.reject(new Error(`请先填写 ${providerLabel(config.provider)} API Key`));
 
     return requestJSON(config, "/chat/completions", "POST", {
@@ -260,6 +272,19 @@ var __MN_DEEPSEEK_API_GLOBAL__ = (function () {
         message: "连接成功，当前模型可以生成文章",
       };
     });
+  }
+
+  function requestCompletion(config, body, options) {
+    if (config.provider === "mnchatai") {
+      const selection = __MN_MOMO_CHAT_AI_API_GLOBAL__.currentModel();
+      config.model = `${selection.source}: ${selection.model}`;
+      const system = body.messages.filter(function (message) { return message.role === "system"; })
+        .map(function (message) { return message.content; }).join("\n");
+      const user = body.messages.filter(function (message) { return message.role === "user"; })
+        .map(function (message) { return message.content; }).join("\n");
+      return __MN_MOMO_CHAT_AI_API_GLOBAL__.ask(system, user, options);
+    }
+    return requestJSON(config, "/chat/completions", "POST", body, options).then(responseContent);
   }
 
   function normalizeReadingWords(words) {
@@ -484,7 +509,7 @@ var __MN_DEEPSEEK_API_GLOBAL__ = (function () {
       '{"questions":[{"question":"英文题干","options":{"A":"选项 A","B":"选项 B","C":"选项 C","D":"选项 D"},"answer":"A","explanation":"中文解析"}]}'
     ].filter(Boolean).join("\n");
 
-    return requestJSON(config, "/chat/completions", "POST", {
+    return requestCompletion(config, {
       model: config.model,
       messages: [
         {
@@ -498,8 +523,8 @@ var __MN_DEEPSEEK_API_GLOBAL__ = (function () {
     }, {
       timeoutSeconds: DEEPSEEK_GENERATION_TIMEOUT_SECONDS,
       operationLabel: "生成阅读题",
-    }).then(function (payload) {
-      const content = responseContent(payload);
+      requestToken: readingOptions.requestToken,
+    }).then(function (content) {
       if (!content) throw new Error(`${providerLabel(config.provider)} 没有返回阅读题内容`);
       const questions = parseQuestionsContent(content);
       return {
@@ -546,7 +571,7 @@ var __MN_DEEPSEEK_API_GLOBAL__ = (function () {
       '{"paragraphs":[{"english":"英文第一段","translation":"第一段中文翻译"},{"english":"英文第二段","translation":"第二段中文翻译"}]}',
     ].join("\n");
 
-    return requestJSON(config, "/chat/completions", "POST", {
+    return requestCompletion(config, {
       model: config.model,
       messages: [
         {
@@ -560,11 +585,11 @@ var __MN_DEEPSEEK_API_GLOBAL__ = (function () {
     }, {
       timeoutSeconds: DEEPSEEK_GENERATION_TIMEOUT_SECONDS,
       operationLabel: "生成文章",
-    }).then(function (payload) {
-      const content = responseContent(payload);
-      if (!content) throw new Error("DeepSeek 没有返回文章内容");
+      requestToken: readingOptions.requestToken,
+    }).then(function (content) {
+      if (!content) throw new Error(`${providerLabel(config.provider)} 没有返回文章内容`);
       const parsed = parseArticleContent(content, includeTranslation);
-      if (!parsed.article) throw new Error("DeepSeek 返回的文章内容为空");
+      if (!parsed.article) throw new Error(`${providerLabel(config.provider)} 返回的文章内容为空`);
       return {
         article: parsed.article,
         translation: parsed.translation,

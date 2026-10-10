@@ -7,6 +7,8 @@ var __MN_WEB_BRIDGE_COMMANDS_GLOBAL__ = (function () {
   const AI_PROVIDER_KEY = "cn.marginnote.momo-vocabulary-import.ai-provider";
   const AI_PROFILES_KEY = "cn.marginnote.momo-vocabulary-import.ai-provider-profiles";
   const UI_SETTINGS_KEY = "cn.marginnote.momo-vocabulary-import.ui-settings";
+  let importHistoryRevision = 0;
+  let readingHistoryRevision = 0;
 
   function toBridgePayload(value) {
     return value === undefined ? null : value;
@@ -55,6 +57,30 @@ var __MN_WEB_BRIDGE_COMMANDS_GLOBAL__ = (function () {
     return NSUserDefaults.standardUserDefaults().objectForKey(BOOK_ID_KEY) || "";
   }
 
+  function saveMomoToken(context, payload) {
+    if (!payload || typeof payload.token !== "string") {
+      throw new Error("墨墨 Token 必须是文本");
+    }
+    const token = payload.token.trim();
+    NSUserDefaults.standardUserDefaults().setObjectForKey(token, TOKEN_KEY);
+    return { saved: true, tokenConfigured: !!token };
+  }
+
+  function clipboardText(label) {
+    if (typeof MNUtil === "undefined" || !MNUtil || !("clipboardText" in MNUtil)) {
+      throw new Error("请安装并启用 MN Utils 后使用粘贴按钮，也可长按输入框粘贴");
+    }
+    // 仅在用户点击粘贴时读取文本，不保存剪贴板内容。
+    const text = MNUtil.clipboardText;
+    if (text === undefined || text === null || !String(text).trim()) {
+      throw new Error(`剪贴板没有文本，请先复制${label}`);
+    }
+    return { text: String(text).trim() };
+  }
+
+  function getMomoTokenClipboard() { return clipboardText("墨墨 Token"); }
+  function getAiKeyClipboard() { return clipboardText(" API Key"); }
+
   function safeUiSettings(value) {
     const source = value && typeof value === "object" ? value : {};
     const importOptions = source.importOptions && typeof source.importOptions === "object"
@@ -100,10 +126,13 @@ var __MN_WEB_BRIDGE_COMMANDS_GLOBAL__ = (function () {
   }
 
   function saveSettings(context, payload) {
-    const token = payload && typeof payload.token === "string" ? payload.token.trim() : "";
+    const token = payload && typeof payload.token === "string" ? payload.token.trim() : savedToken();
     const bookId = payload && typeof payload.bookId === "string" ? payload.bookId.trim() : "";
     const defaults = NSUserDefaults.standardUserDefaults();
-    defaults.setObjectForKey(token, TOKEN_KEY);
+    // 普通偏好设置更新不重写 Token，兼容旧页面显式传入的凭证。
+    if (payload && typeof payload.token === "string") {
+      defaults.setObjectForKey(token, TOKEN_KEY);
+    }
     defaults.setObjectForKey(bookId, BOOK_ID_KEY);
     if (payload && (payload.importOptions || payload.readingOptions)) {
       const current = savedUiSettings();
@@ -173,11 +202,22 @@ var __MN_WEB_BRIDGE_COMMANDS_GLOBAL__ = (function () {
     return savedAiSettings();
   }
 
+  function getMnChatAiModels() {
+    return __MN_MOMO_CHAT_AI_API_GLOBAL__.getModels();
+  }
+
   function saveAiSettings(context, payload) {
     const input = payload && typeof payload === "object" ? payload : {};
     const requestedProvider = input.provider || __MN_DEEPSEEK_API_GLOBAL__.DEFAULT_PROVIDER;
     const settings = __MN_DEEPSEEK_API_GLOBAL__.normalizeSettings(Object.assign({}, input, { provider: requestedProvider }));
     const provider = settings.provider;
+    let mnChatAiSelection;
+    if (provider === "mnchatai" && (input.mnChatAiSource !== undefined || input.mnChatAiModel !== undefined)) {
+      if (typeof input.mnChatAiSource !== "string" || typeof input.mnChatAiModel !== "string") {
+        throw new Error("请选择 MN ChatAI 服务商和模型");
+      }
+      mnChatAiSelection = __MN_MOMO_CHAT_AI_API_GLOBAL__.selectModel(input.mnChatAiSource, input.mnChatAiModel);
+    }
     const defaults = NSUserDefaults.standardUserDefaults();
     const profiles = readAiProfiles();
     const submittedProfiles = input.providers && typeof input.providers === "object"
@@ -205,11 +245,18 @@ var __MN_WEB_BRIDGE_COMMANDS_GLOBAL__ = (function () {
       apiKeyConfigured: !!settings.apiKey,
       baseUrl: settings.baseUrl,
       model: settings.model,
+      mnChatAiSelection: mnChatAiSelection || null,
     };
   }
 
   function testAiConnection(context, payload) {
     return __MN_DEEPSEEK_API_GLOBAL__.testConnection(payload || {});
+  }
+
+  function cancelAiReadingGeneration(context, payload) {
+    const requestToken = payload && typeof payload.requestToken === "string" ? payload.requestToken : "";
+    if (!requestToken) throw new Error("缺少本次生成任务标识");
+    return __MN_MOMO_CHAT_AI_API_GLOBAL__.cancel(requestToken);
   }
 
   function getTodayFinishedWords(context, payload) {
@@ -225,7 +272,16 @@ var __MN_WEB_BRIDGE_COMMANDS_GLOBAL__ = (function () {
     return { entries: __MN_MOMO_READING_HISTORY_GLOBAL__.listHistory() };
   }
 
+  function clearAiReadingHistory(context, payload) {
+    if (!payload || payload.confirmed !== true) throw new Error("请先确认清除 AI 阅读历史");
+    __MN_MOMO_READING_HISTORY_GLOBAL__.clearHistory();
+    // 清除成功后使旧请求失效，避免暂停的生成任务稍后又写回历史。
+    readingHistoryRevision += 1;
+    return { cleared: true, entries: [] };
+  }
+
   function generateTodayReading(context, payload) {
+    const historyRevision = readingHistoryRevision;
     const input = payload && typeof payload === "object" ? payload : {};
     const settings = input.settings && typeof input.settings === "object"
       ? input.settings
@@ -235,6 +291,9 @@ var __MN_WEB_BRIDGE_COMMANDS_GLOBAL__ = (function () {
       input.words,
       input,
     ).then(function (result) {
+      if (historyRevision !== readingHistoryRevision) {
+        throw new Error("阅读历史已清除，本次生成结果未保存");
+      }
       const historyEntry = __MN_MOMO_READING_HISTORY_GLOBAL__.recordArticle(input, result);
       return Object.assign({}, result, { historyEntry });
     });
@@ -311,6 +370,7 @@ var __MN_WEB_BRIDGE_COMMANDS_GLOBAL__ = (function () {
   }
 
   function executeImport(context, payload, bookId, metadata) {
+    const historyRevision = importHistoryRevision;
     const words = payload && Array.isArray(payload.words) ? payload.words : [];
     const examples = payload && Array.isArray(payload.examples) ? payload.examples : [];
     const options = importOptions(payload);
@@ -340,6 +400,9 @@ var __MN_WEB_BRIDGE_COMMANDS_GLOBAL__ = (function () {
     };
 
     function saveHistory(result) {
+      if (historyRevision !== importHistoryRevision) {
+        return Object.assign({}, result, { historyError: "导入历史已清除，本次任务不再保存记录" });
+      }
       try {
         const history = __MN_MOMO_IMPORT_HISTORY_GLOBAL__.recordImport(payload, result, {
           bookId,
@@ -406,6 +469,13 @@ var __MN_WEB_BRIDGE_COMMANDS_GLOBAL__ = (function () {
     };
   }
 
+  function clearImportHistory(context, payload) {
+    if (!payload || payload.confirmed !== true) throw new Error("请先确认清除导入历史");
+    __MN_MOMO_IMPORT_HISTORY_GLOBAL__.clearHistory();
+    importHistoryRevision += 1;
+    return { cleared: true, entries: [] };
+  }
+
   function retryImportHistory(context, payload) {
     const historyId = payload && typeof payload.historyId === "string"
       ? payload.historyId
@@ -432,11 +502,17 @@ var __MN_WEB_BRIDGE_COMMANDS_GLOBAL__ = (function () {
     openExternalURL,
     getSettings,
     saveSettings,
+    saveMomoToken,
+    getMomoTokenClipboard,
+    getAiKeyClipboard,
     getAiSettings,
+    getMnChatAiModels,
     saveAiSettings,
     testAiConnection,
+    cancelAiReadingGeneration,
     getTodayFinishedWords,
     listAiReadingHistory,
+    clearAiReadingHistory,
     generateTodayReading,
     generateReadingQuestions,
     getSelectedTitles,
@@ -444,6 +520,7 @@ var __MN_WEB_BRIDGE_COMMANDS_GLOBAL__ = (function () {
     listMomoNotepads,
     importMomoWords,
     listImportHistory,
+    clearImportHistory,
     retryImportHistory,
   };
 
