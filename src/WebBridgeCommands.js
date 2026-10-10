@@ -43,9 +43,35 @@ var __MN_WEB_BRIDGE_COMMANDS_GLOBAL__ = (function () {
       throw new Error("只允许打开墨墨开放平台地址");
     }
 
+    const useSafari = payload.browser === "safari";
+    if (typeof NSURL === "undefined" || !NSURL || typeof NSURL.URLWithString !== "function") {
+      throw new Error("当前环境不支持打开外部浏览器");
+    }
     const url = NSURL.URLWithString(urlString);
     if (!url) throw new Error("墨墨开放平台地址无效");
-    UIApplication.sharedApplication().openURL(url);
+    const application = typeof UIApplication !== "undefined" && UIApplication &&
+      typeof UIApplication.sharedApplication === "function" ? UIApplication.sharedApplication() : null;
+    // 部分系统不支持 Safari 专用协议，失败后继续打开原始 HTTPS 地址。
+    if (useSafari && application && typeof application.openURL === "function") {
+      try {
+        const safariURL = NSURL.URLWithString(urlString.replace(/^https:/, "x-safari-https:"));
+        if (safariURL && application.openURL(safariURL)) return { opened: true };
+      } catch (ignored) { /* 专用协议不可用时使用下方标准接口。 */ }
+    }
+    // MN Utils 封装返回 void，不能将没有返回值误判为打开失败。
+    if (typeof MNUtil !== "undefined" && MNUtil && typeof MNUtil.openURL === "function") {
+      MNUtil.openURL(urlString);
+      return { opened: true };
+    }
+    const app = typeof Application !== "undefined" && Application &&
+      typeof Application.sharedInstance === "function" ? Application.sharedInstance() : null;
+    if (app && typeof app.openURL === "function") {
+      const result = app.openURL(url);
+      if (result === false || result === 0) throw new Error("无法打开外部浏览器");
+      return { opened: true };
+    }
+    if (!application || typeof application.openURL !== "function") throw new Error("当前环境不支持打开外部浏览器");
+    if (!application.openURL(url)) throw new Error("无法打开外部浏览器");
     return { opened: true };
   }
 
@@ -476,6 +502,12 @@ var __MN_WEB_BRIDGE_COMMANDS_GLOBAL__ = (function () {
     return { cleared: true, entries: [] };
   }
 
+  function deleteImportHistory(context, payload) {
+    if (!payload || payload.confirmed !== true) throw new Error("请先确认删除这条导入历史");
+    __MN_MOMO_IMPORT_HISTORY_GLOBAL__.deleteHistory(payload.historyId);
+    return { deleted: true, entries: __MN_MOMO_IMPORT_HISTORY_GLOBAL__.listHistory() };
+  }
+
   function retryImportHistory(context, payload) {
     const historyId = payload && typeof payload.historyId === "string"
       ? payload.historyId
@@ -521,6 +553,7 @@ var __MN_WEB_BRIDGE_COMMANDS_GLOBAL__ = (function () {
     importMomoWords,
     listImportHistory,
     clearImportHistory,
+    deleteImportHistory,
     retryImportHistory,
   };
 

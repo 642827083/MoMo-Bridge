@@ -3,6 +3,8 @@ export default function HighlightToggle({ active, onChange }) {
     <button
       className={`reading-highlight-option reading-heading-highlight-option${active ? " is-active" : ""}`}
       type="button"
+      aria-label="高亮词汇"
+      title={active ? "关闭词汇高亮" : "开启词汇高亮"}
       aria-pressed={active}
       onClick={() => onChange(!active)}
     >
@@ -10,7 +12,6 @@ export default function HighlightToggle({ active, onChange }) {
         <path d="m13 3 8 8-7 7-8-8Z" />
         <path d="m6 10-2 5 5 5 5-2M4 15l-2 5h7M14 4l6 6M3 23h9" />
       </svg>
-      <span>高亮词汇</span>
     </button>
   );
 }

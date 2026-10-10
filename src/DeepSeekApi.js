@@ -457,8 +457,8 @@ var __MN_DEEPSEEK_API_GLOBAL__ = (function () {
     const questions = arrayItems(rawQuestions)
       .map(normalizeQuestion)
       .filter(Boolean);
-    if (questions.length < 3 || questions.length > 5) {
-      throw new Error("AI 返回的阅读题数量应为 3 至 5 道");
+    if (questions.length !== 4 || arrayItems(rawQuestions).length !== 4) {
+      throw new Error("AI 返回的阅读题必须为四道完整题目");
     }
     return questions;
   }
@@ -485,10 +485,7 @@ var __MN_DEEPSEEK_API_GLOBAL__ = (function () {
     const articleType = ["cet4", "cet6", "postgraduate1", "postgraduate2"].indexOf(readingOptions.articleType) >= 0
       ? readingOptions.articleType
       : "postgraduate2";
-    const requestedCount = Number(readingOptions.questionCount);
-    const questionCount = Number.isFinite(requestedCount)
-      ? Math.max(3, Math.min(5, Math.floor(requestedCount)))
-      : 4;
+    const questionCount = 4;
     const selectedWords = normalizeReadingWords(words);
     const wordText = selectedWords.map(function (word) { return word.spelling; }).join(", ");
     const prompt = [

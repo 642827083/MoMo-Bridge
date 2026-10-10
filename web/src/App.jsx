@@ -10,7 +10,7 @@ import MNBridge from "./lib/mnBridge";
 import TokenVisibilityIcon from "./components/TokenVisibilityIcon";
 import OptionCheck from "./components/OptionCheck";
 import RefreshIcon from "./components/RefreshIcon";
-import HighlightToggle from "./components/HighlightToggle";
+import ReadingVocabulary from "./components/ReadingVocabulary";
 import { ImportPreviewPanel, ImportHistoryPanel } from "./components/ImportContent";
 import { importResultHasFailures } from "./domain/importPresentation.mjs";
 
@@ -154,16 +154,6 @@ function readingEnglishText(entry) {
     : typeof entry?.article === "string" ? entry.article : "";
 }
 
-function readingBilingualText(entry) {
-  const paragraphs = readingParagraphs(entry);
-  if (paragraphs.length) {
-    return paragraphs.map((paragraph) => (
-      paragraph.translation ? `${paragraph.english}\n${paragraph.translation}` : paragraph.english
-    )).join("\n\n");
-  }
-  return entry?.translation ? `${entry.article}\n\n${entry.translation}` : entry?.article || "";
-}
-
 function escapeReadingRegExp(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -230,22 +220,10 @@ function renderHighlightedReadingText(text, words, enabled) {
   });
 }
 
-function formatReadingQuestions(questions) {
-  return (Array.isArray(questions) ? questions : []).map((item, index) => {
-    const options = item && item.options && typeof item.options === "object" ? item.options : {};
-    return [
-      `${index + 1}. ${item?.question || ""}`,
-      `A. ${options.A || ""}`,
-      `B. ${options.B || ""}`,
-      `C. ${options.C || ""}`,
-      `D. ${options.D || ""}`,
-      `答案：${item?.answer || ""}`,
-      `解析：${item?.explanation || ""}`,
-    ].join("\n");
-  }).join("\n\n");
-}
-
 function App() {
+  const [readingControlsOpen, setReadingControlsOpen] = useState(true);
+  const [momoAccountOpen, setMomoAccountOpen] = useState(false);
+  const [deletingHistoryId, setDeletingHistoryId] = useState("");
   const [token, setToken] = useState("");
   const [momoTokenDraft, setMomoTokenDraft] = useState("");
   const [showMomoToken, setShowMomoToken] = useState(false);
@@ -316,16 +294,16 @@ function App() {
 
   const hasImportContent = addWords || addExamples || addStudy;
   const usesMnChatAi = aiProvider === "mnchatai";
-  const aiConfigurationBusy = aiSaving || aiTesting || aiPasting || mnChatAiLoading || readingBusy || readingQuestionsBusy;
+  const aiConfigurationBusy = aiSaving || aiTesting || aiPasting || mnChatAiLoading || readingBusy || readingQuestionsBusy || Boolean(deletingHistoryId);
   const mnChatAiModels = mnChatAiCatalog?.sources?.find((item) => item.value === mnChatAiSource)?.models || [];
   const mnChatAiSelectionValid = mnChatAiModels.some((item) => item.value === mnChatAiModel);
   const mnChatAiSelectionChanged = Boolean(mnChatAiCatalog)
     && (mnChatAiSource !== mnChatAiCatalog.source || mnChatAiModel !== mnChatAiCatalog.model);
-  const momoAccountBusy = momoSaving || momoPasting || busy || readingBusy || readingLoading || readingQuestionsBusy || Boolean(clearingHistory);
-  const historyMaintenanceBusy = busy || readingBusy || readingQuestionsBusy || readingLoading
+  const momoAccountBusy = momoSaving || momoPasting || busy || readingBusy || readingLoading || readingQuestionsBusy || Boolean(clearingHistory) || Boolean(deletingHistoryId);
+  const historyMaintenanceBusy = Boolean(deletingHistoryId) || busy || readingBusy || readingQuestionsBusy || readingLoading
     || historyLoading || readingHistoryLoading || Boolean(clearingHistory);
   const needsBook = addWords;
-  const canPreview = hasImportContent && token.trim() && (!needsBook || bookId.trim()) && !busy;
+  const canPreview = hasImportContent && token.trim() && (!needsBook || bookId.trim()) && !busy && !deletingHistoryId;
   const previewWords = preview ? preview.lemmas : [];
   const previewExamples = preview ? preview.examples || [] : [];
   const canConfirm = previewWords.length > 0 &&
@@ -355,6 +333,24 @@ function App() {
   const nativeReadingRequestRef = useRef("");
   const momoTokenInputRef = useRef(null);
   const aiKeyInputRef = useRef(null);
+  const aiSettingsCardRef = useRef(null);
+  const focusAiSettingsRef = useRef(false);
+  const readingModelLabel = usesMnChatAi
+    ? `MN ChatAI · ${mnChatAiLoading ? "正在读取模型…" : mnChatAiError ? "模型读取失败" : mnChatAiCatalog?.currentModel || "尚未读取模型"}`
+    : `${aiProviderDefinition(aiProvider).label} · ${aiModel.trim() || "未配置模型"}`;
+
+  function openAiSettings() {
+    focusAiSettingsRef.current = true;
+    setActivePage("settings");
+  }
+
+  useEffect(() => {
+    if (activePage === "settings" && focusAiSettingsRef.current) {
+      focusAiSettingsRef.current = false;
+      aiSettingsCardRef.current?.scrollIntoView({ block: "start" });
+      aiSettingsCardRef.current?.querySelector("select")?.focus({ preventScroll: true });
+    }
+  }, [activePage]);
 
   useEffect(() => {
     if (!busy || !estimateDeadline) return undefined;
@@ -438,7 +434,7 @@ function App() {
   }, [activePage]);
 
   useEffect(() => {
-    if (usesMnChatAi && activePage === "settings") loadMnChatAiModels();
+    if (usesMnChatAi && ["settings", "reading"].includes(activePage)) loadMnChatAiModels();
   }, [usesMnChatAi, activePage]);
 
   function applyMnChatAiCatalog(payload) {
@@ -492,6 +488,23 @@ function App() {
       }
     } finally {
       setReadingHistoryLoading(false);
+    }
+  }
+
+  async function deleteHistoryEntry(kind, entry) {
+    if (historyMaintenanceBusy || kind !== "import") return;
+    setDeletingHistoryId(`${kind}:${entry.id}`);
+    try {
+      const payload = await MNBridge.send("deleteImportHistory", {
+        historyId: entry.id, confirmed: true,
+      });
+      if (payload.deleted !== true || !Array.isArray(payload.entries)) throw new Error("删除失败，请重试");
+      setHistoryEntries(payload.entries);
+      showImportMessage("这条导入历史已删除", "success");
+    } catch (error) {
+      showImportMessage(error.message || "删除历史失败");
+    } finally {
+      setDeletingHistoryId("");
     }
   }
 
@@ -950,91 +963,22 @@ function App() {
     await generateReadingQuestionsForArticle(currentArticle);
   }
 
-  async function copyReadingContentForArticle(article, includeTranslation) {
-    if (!article?.article) return;
-    const content = includeTranslation
-      ? readingBilingualText(article)
-      : readingEnglishText(article);
-    try {
-      await navigator.clipboard.writeText(content);
-      setReadingMessageKind("success");
-      setReadingMessage(includeTranslation ? "中英对照已复制" : "英文文章已复制");
-    } catch (error) {
-      setReadingMessageKind("error");
-      setReadingMessage("无法复制文章");
-    }
-  }
-
-  async function copyReadingContent(includeTranslation) {
-    await copyReadingContentForArticle(currentArticle, includeTranslation);
-  }
-
-  async function copyReadingQuestionsForArticle(article) {
-    const questions = article?.questions;
-    if (!Array.isArray(questions) || questions.length === 0) return;
-    try {
-      await navigator.clipboard.writeText(formatReadingQuestions(questions));
-      setReadingMessageKind("success");
-      setReadingMessage("阅读题已复制");
-    } catch (error) {
-      setReadingMessageKind("error");
-      setReadingMessage("无法复制阅读题");
-    }
-  }
-
-  async function copyReadingQuestions() {
-    await copyReadingQuestionsForArticle(currentArticle);
-  }
-
   function renderReadingArticleActions(article, isHistory = false) {
     const articleId = readingArticleId(article);
-    const hasTranslation = readingParagraphs(article).some((paragraph) => paragraph.translation)
-      || Boolean(article?.translation);
     const hasQuestions = Array.isArray(article?.questions) && article.questions.length > 0;
     const questionLoading = readingQuestionsBusy && readingQuestionsTargetId === articleId;
     return (
       <div className={`reading-article-actions${isHistory ? " reading-history-article-actions" : ""}`}>
-        <button
-          className="secondary-button reading-action-button"
-          type="button"
-          disabled={readingBusy || readingQuestionsBusy}
-          onClick={() => isHistory ? regenerateHistoryReading(article) : regenerateReading()}
-        >
+        <button className="reading-action-button" type="button"
+          disabled={historyMaintenanceBusy}
+          onClick={() => isHistory ? regenerateHistoryReading(article) : regenerateReading()}>
           重新生成文章
         </button>
-        <button
-          className="secondary-button reading-action-button"
-          type="button"
-          disabled={readingBusy || readingQuestionsBusy}
-          onClick={() => isHistory ? generateReadingQuestionsForArticle(article) : generateReadingQuestions()}
-        >
+        <button className="reading-action-button" type="button"
+          disabled={historyMaintenanceBusy}
+          onClick={() => isHistory ? generateReadingQuestionsForArticle(article) : generateReadingQuestions()}>
           {questionLoading ? "正在生成阅读题…" : hasQuestions ? "重新生成阅读题" : "生成阅读题"}
         </button>
-        <button
-          className="secondary-button reading-action-button"
-          type="button"
-          onClick={() => isHistory ? copyReadingContentForArticle(article, false) : copyReadingContent(false)}
-        >
-          复制英文
-        </button>
-        {hasTranslation ? (
-          <button
-            className="secondary-button reading-action-button"
-            type="button"
-            onClick={() => isHistory ? copyReadingContentForArticle(article, true) : copyReadingContent(true)}
-          >
-            复制中英对照
-          </button>
-        ) : null}
-        {hasQuestions ? (
-          <button
-            className="secondary-button reading-action-button"
-            type="button"
-            onClick={() => isHistory ? copyReadingQuestionsForArticle(article) : copyReadingQuestions()}
-          >
-            复制阅读题
-          </button>
-        ) : null}
       </div>
     );
   }
@@ -1089,7 +1033,6 @@ function App() {
           </div>
           <div className="reading-article-heading-actions">
             <span>{currentArticle.words?.length || 0} 个单词</span>
-            <HighlightToggle active={highlightReadingWords} onChange={setHighlightReadingWords} />
           </div>
         </div>
         {currentArticle.words?.length ? (
@@ -1100,14 +1043,8 @@ function App() {
             </div>
           </details>
         ) : null}
-        {currentArticleWordSummary.total ? (
-          <p className="reading-vocabulary-summary">
-            文章中找到 {currentArticleWordSummary.used}/{currentArticleWordSummary.total} 个本次词汇
-            {currentArticleWordSummary.missing.length ? (
-              <span>；未在文章中发现：{currentArticleWordSummary.missing.map((word) => word.spelling).join("、")}</span>
-            ) : null}
-          </p>
-        ) : null}
+        <ReadingVocabulary key={`vocabulary-${readingArticleId(currentArticle) || currentArticle.article}`}
+          summary={currentArticleWordSummary} active={highlightReadingWords} onChange={setHighlightReadingWords} />
         {currentArticle.paragraphs?.length ? (
           <div className="reading-article-paragraphs">
             {currentArticle.paragraphs.map((paragraph, index) => (
@@ -1142,9 +1079,12 @@ function App() {
 
   function openTokenHelp(event) {
     event.preventDefault();
-    MNBridge.send("openExternalURL", { url: TOKEN_HELP_URL }).catch(() => {
+    setMomoMessage("");
+    MNBridge.send("openExternalURL", { url: TOKEN_HELP_URL, browser: "safari" }).then((result) => {
+      if (result?.opened !== true) throw new Error("未能打开浏览器");
+    }).catch((error) => {
       setMomoMessageKind("error");
-      setMomoMessage("无法打开墨墨开放平台，请手动访问 https://open.maimemo.com/#/");
+      setMomoMessage(`${error.message || "无法打开 Safari"}，请在 Safari 中手动访问 ${TOKEN_HELP_URL}`);
     });
   }
 
@@ -1564,9 +1504,11 @@ function App() {
             />
           ) : (
             <ImportHistoryPanel
-              historyEntries={historyEntries} busy={busy} historyLoading={historyLoading} loadImportHistory={loadImportHistory}
-              formatHistoryTime={formatHistoryTime} historyOptions={historyOptions} tokenConfigured={Boolean(token.trim())}
+              historyEntries={historyEntries} busy={busy || Boolean(deletingHistoryId)} historyLoading={historyLoading} loadImportHistory={loadImportHistory}
+              formatHistoryTime={readingHistoryTime} historyOptions={historyOptions} tokenConfigured={Boolean(token.trim())}
               retryingHistoryId={retryingHistoryId} retryHistory={retryHistory}
+              historyMaintenanceBusy={historyMaintenanceBusy} deletingHistoryId={deletingHistoryId}
+              deleteHistoryEntry={deleteHistoryEntry}
             />
           )}
         </section>
@@ -1574,89 +1516,99 @@ function App() {
       ) : activePage === "reading" ? (
         <main key="reading" className="reading-layout" aria-label="AI 阅读">
           <section className="reading-card">
-            <div className="reading-settings-body">
-              <div className="reading-heading">
-                <div>
-                  <h2>AI 阅读</h2>
-                  <p>根据今日已背诵单词生成英语阅读。</p>
+            <div className={`reading-settings-body${readingControlsOpen ? "" : " is-collapsed"}`}>
+              <button className="reading-controls-toggle" type="button" aria-expanded={readingControlsOpen}
+                aria-controls="reading-configuration" onClick={() => setReadingControlsOpen((current) => !current)}>
+                <span>{readingArticleTypeLabel(readingArticleType)} · {READING_LENGTHS.find((item) => item.value === readingLength)?.label}{readingTranslation ? " · 含翻译" : ""}{readingQuestionsEnabled ? " · 含阅读题" : ""}</span>
+                <span>{readingControlsOpen ? "收起配置" : "展开配置"}</span>
+              </button>
+              <div className="reading-configuration" id="reading-configuration">
+                <div className="reading-heading">
+                  <div>
+                    <h2>AI 阅读</h2>
+                    <p>根据今日已背诵单词生成英语阅读。</p>
+                  </div>
                 </div>
-              </div>
 
-              <div className="reading-stat-grid">
-                <div><strong>{todayItems.length}</strong><span>今日已背诵</span></div>
-                <div><strong>{generatedTodayCount}</strong><span>已生成阅读</span></div>
-                <div><strong>{pendingTodayCount}</strong><span>待生成阅读</span></div>
-              </div>
+                <div className="reading-stat-grid">
+                  <div><strong>{todayItems.length}<small>词</small></strong><span>今日已背诵</span></div>
+                  <div><strong>{generatedTodayCount}<small>词</small></strong><span>已覆盖单词</span></div>
+                  <div><strong>{pendingTodayCount}<small>词</small></strong><span>待使用单词</span></div>
+                </div>
 
-              <div className="reading-controls">
-                <div className="reading-control">
-                  <label className="field-label" htmlFor="reading-article-type">文章类型</label>
-                  <select
-                    id="reading-article-type"
-                    value={readingArticleType}
-                    onChange={(event) => {
-                      const value = event.target.value;
-                      setReadingArticleType(value);
-                      saveSettings(bookId, { articleType: value }).catch(() => setReadingMessage("保存阅读设置失败"));
-                    }}
-                  >
-                    {READING_ARTICLE_TYPES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-                  </select>
-                </div>
-                <div className="reading-control">
-                  <label className="field-label" htmlFor="reading-length">文章长度</label>
-                  <select
-                    id="reading-length"
-                    value={readingLength}
-                    onChange={(event) => {
-                      const value = event.target.value;
-                      setReadingLength(value);
-                      saveSettings(bookId, { length: value }).catch(() => setReadingMessage("保存阅读设置失败"));
-                    }}
-                  >
-                    {READING_LENGTHS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-                  </select>
-                </div>
-                <div className="reading-reading-options">
-                  <label className="reading-translation-option">
-                    <input
-                      id="reading-translation"
-                      type="checkbox"
-                      checked={readingTranslation}
+                <div className="reading-controls">
+                  <div className="reading-control">
+                    <label className="field-label" htmlFor="reading-article-type">文章类型</label>
+                    <select
+                      id="reading-article-type"
+                      value={readingArticleType}
                       onChange={(event) => {
-                        const checked = event.target.checked;
-                        setReadingTranslation(checked);
-                        saveSettings(bookId, { translation: checked }).catch(() => setReadingMessage("保存阅读设置失败"));
+                        const value = event.target.value;
+                        setReadingArticleType(value);
+                        saveSettings(bookId, { articleType: value }).catch(() => setReadingMessage("保存阅读设置失败"));
                       }}
-                    />
-                    <OptionCheck />
-                    <span>生成中文翻译</span>
-                  </label>
-                  <label className="reading-translation-option">
-                    <input
-                      id="reading-questions"
-                      type="checkbox"
-                      checked={readingQuestionsEnabled}
+                    >
+                      {READING_ARTICLE_TYPES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                    </select>
+                  </div>
+                  <div className="reading-control">
+                    <label className="field-label" htmlFor="reading-length">文章长度</label>
+                    <select
+                      id="reading-length"
+                      value={readingLength}
                       onChange={(event) => {
-                        const checked = event.target.checked;
-                        setReadingQuestionsEnabled(checked);
-                        saveSettings(bookId, { questions: checked }).catch(() => setReadingMessage("保存阅读设置失败"));
+                        const value = event.target.value;
+                        setReadingLength(value);
+                        saveSettings(bookId, { length: value }).catch(() => setReadingMessage("保存阅读设置失败"));
                       }}
-                    />
-                    <OptionCheck />
-                    <span>同时生成阅读题</span>
-                  </label>
+                    >
+                      {READING_LENGTHS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                    </select>
+                  </div>
+                  <div className="reading-reading-options">
+                    <label className="reading-translation-option">
+                      <input
+                        id="reading-translation"
+                        type="checkbox"
+                        checked={readingTranslation}
+                        onChange={(event) => {
+                          const checked = event.target.checked;
+                          setReadingTranslation(checked);
+                          saveSettings(bookId, { translation: checked }).catch(() => setReadingMessage("保存阅读设置失败"));
+                        }}
+                      />
+                      <OptionCheck />
+                      <span>生成中文翻译</span>
+                    </label>
+                    <label className="reading-translation-option">
+                      <input
+                        id="reading-questions"
+                        type="checkbox"
+                        checked={readingQuestionsEnabled}
+                        onChange={(event) => {
+                          const checked = event.target.checked;
+                          setReadingQuestionsEnabled(checked);
+                          saveSettings(bookId, { questions: checked }).catch(() => setReadingMessage("保存阅读设置失败"));
+                        }}
+                      />
+                      <OptionCheck />
+                      <span>同时生成阅读题</span>
+                    </label>
+                  </div>
                 </div>
-              </div>
 
             </div>
 
+            </div>
             <div className="reading-action-footer">
+              <button className="reading-model-link" type="button" onClick={openAiSettings} title="前往 AI 设置">
+                <span>{readingModelLabel}</span><span aria-hidden="true">›</span>
+              </button>
               <div className="reading-actions">
                 <button
                   className="secondary-button reading-action-button"
                   type="button"
-                  disabled={readingLoading || readingBusy || readingQuestionsBusy}
+                  disabled={readingLoading || readingBusy || readingQuestionsBusy || Boolean(deletingHistoryId)}
                   onClick={() => loadTodayReading(true)}
                 >
                   {readingLoading ? "读取中…" : "重新读取"}
@@ -1664,7 +1616,7 @@ function App() {
                 <button
                   className={readingBusy ? "secondary-button reading-action-button" : "primary-action reading-action-button"}
                   type="button"
-                  disabled={readingCancelling || readingLoading || (!readingBusy && (readingQuestionsBusy || readingSelection.length === 0))}
+                  disabled={readingCancelling || readingLoading || Boolean(deletingHistoryId) || (!readingBusy && (readingQuestionsBusy || readingSelection.length === 0))}
                   onClick={readingBusy ? pauseReadingGeneration : currentArticle ? generateNextReading : generateSelectedReading}
                 >
                   {readingCancelling ? "正在暂停…" : readingBusy ? "暂停生成" : currentArticle ? "生成下一篇" : "生成 AI 阅读"}
@@ -1737,7 +1689,7 @@ function App() {
               <h3>最近 {readingHistory.length} 篇阅读</h3>
               <button className="history-refresh reading-history-refresh" type="button"
                 aria-label={readingHistoryLoading ? "正在刷新阅读历史" : "刷新阅读历史"}
-                title="刷新阅读历史" disabled={readingHistoryLoading || readingBusy || readingQuestionsBusy}
+                title="刷新阅读历史" disabled={readingHistoryLoading || readingBusy || readingQuestionsBusy || Boolean(deletingHistoryId)}
                 onClick={() => loadReadingHistory(true)}>
                 <RefreshIcon />
               </button>
@@ -1753,32 +1705,22 @@ function App() {
                     }}>
                       <span className="reading-history-summary-text">
                         <span className="reading-history-meta">
+                          <span className="reading-history-labels">
                           <strong>{readingArticleTypeLabel(entry.articleType)} · {READING_LENGTHS.find((item) => item.value === entry.length)?.label || "中等"}</strong>
+                          <small>{entry.words?.length || 0} 个单词{entry.questions?.length ? ` · ${entry.questions.length} 道题` : ""}</small>
+                          </span>
                           <time>{readingHistoryTime(entry.createdAt)}</time>
                         </span>
                         <span className="reading-history-excerpt">{readingEnglishText(entry).replace(/\s+/g, " ").trim()}</span>
-                        <span className="reading-history-bottom">
-                          <small>{entry.words?.length || 0} 个单词{entry.questions?.length ? ` · ${entry.questions.length} 道题` : ""}</small>
-                          <span className="reading-history-chevron" aria-hidden="true">›</span>
-                        </span>
                       </span>
+                      <span className="reading-history-chevron" aria-hidden="true">›</span>
                     </summary>
                     <div className="reading-history-content">
-                      <div className="reading-history-toolbar">
-                        <HighlightToggle active={historyHighlightState[entry.id] !== false}
+                      <ReadingVocabulary summary={readingWordSummary(entry)} active={historyHighlightState[entry.id] !== false}
                           onChange={(active) => setHistoryHighlightState((current) => ({
                               ...current,
                               [entry.id]: active,
                             }))} />
-                      </div>
-                      {readingWordSummary(entry).total ? (
-                        <p className="reading-vocabulary-summary">
-                          文章中找到 {readingWordSummary(entry).used}/{readingWordSummary(entry).total} 个本篇词汇
-                          {readingWordSummary(entry).missing.length ? (
-                            <span>；未在文章中发现：{readingWordSummary(entry).missing.map((word) => word.spelling).join("、")}</span>
-                          ) : null}
-                        </p>
-                      ) : null}
                       {entry.paragraphs?.length ? (
                         <div className="reading-history-paragraphs">
                           {entry.paragraphs.map((paragraph, index) => (
@@ -1815,17 +1757,21 @@ function App() {
                         <div className="reading-history-questions">
                           <strong>阅读理解题</strong>
                           {entry.questions.map((item, index) => (
-                            <details className="reading-history-question" key={`${item.question}-${index}`}>
-                              <summary>{index + 1}. {item.question}</summary>
-                              <div className="reading-history-question-body">
-                                <p>A. {item.options?.A}</p>
-                                <p>B. {item.options?.B}</p>
-                                <p>C. {item.options?.C}</p>
-                                <p>D. {item.options?.D}</p>
-                                <p><strong>答案：{item.answer}</strong></p>
-                                <p>解析：{item.explanation}</p>
+                            <div className="reading-history-question" key={`${item.question}-${index}`}>
+                              <p className="reading-question-title"><strong>{index + 1}.</strong> {item.question}</p>
+                              <div className="reading-question-options">
+                                {["A", "B", "C", "D"].map((letter) => (
+                                  <div key={letter}><strong>{letter}.</strong> {item.options?.[letter]}</div>
+                                ))}
                               </div>
-                            </details>
+                              <details className="reading-answer-details">
+                                <summary>查看答案与解析</summary>
+                                <div className="reading-answer-content">
+                                  <p><strong>答案：{item.answer}</strong></p>
+                                  <p>解析：{item.explanation}</p>
+                                </div>
+                              </details>
+                            </div>
                           ))}
                         </div>
                       ) : null}
@@ -1851,85 +1797,96 @@ function App() {
             <p className={`momo-account-status${token.trim() ? " is-configured" : ""}`}>
               {token.trim() ? "已保存 Token" : "未配置 Token"}
             </p>
-            <div className="token-field">
-              <label className="field-label" htmlFor="momo-token">墨墨 Token</label>
-              <a
-                className="token-help"
-                href={TOKEN_HELP_URL}
-                target="_blank"
-                rel="noreferrer"
-                onClick={openTokenHelp}
-              >
-                如何获取墨墨 Token
-              </a>
-              <div className="secret-input-row">
-                <div className="token-input-control">
-                  <input
-                    ref={momoTokenInputRef}
-                    id="momo-token"
-                    type={showMomoToken ? "text" : "password"}
-                    value={momoTokenDraft}
-                    autoComplete="off"
-                    spellCheck={false}
-                    disabled={momoAccountBusy}
-                    placeholder="粘贴 Token"
-                    onChange={(event) => {
-                      setMomoTokenDraft(event.target.value);
-                      setMomoMessage("");
-                    }}
-                  />
+            {token.trim() && !momoAccountOpen ? (
+              <button className="secondary-button account-edit-button" type="button" onClick={() => setMomoAccountOpen(true)}>修改 Token</button>
+            ) : (
+              <div className="momo-account-editor">
+                <div className="token-field">
+                  <label className="field-label" htmlFor="momo-token">墨墨 Token</label>
+                  <a
+                    className="token-help"
+                    href={TOKEN_HELP_URL}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={openTokenHelp}
+                  >
+                    如何获取墨墨 Token
+                  </a>
+                  <div className="secret-input-row">
+                    <div className="token-input-control">
+                      <input
+                        ref={momoTokenInputRef}
+                        id="momo-token"
+                        type={showMomoToken ? "text" : "password"}
+                        value={momoTokenDraft}
+                        autoComplete="off"
+                        spellCheck={false}
+                        disabled={momoAccountBusy}
+                        placeholder="粘贴 Token"
+                        onChange={(event) => {
+                          setMomoTokenDraft(event.target.value);
+                          setMomoMessage("");
+                        }}
+                      />
+                      <button
+                        className="token-visibility-button"
+                        type="button"
+                        disabled={momoAccountBusy}
+                        aria-label={showMomoToken ? "隐藏墨墨 Token" : "显示墨墨 Token"}
+                        title={showMomoToken ? "隐藏 Token" : "显示 Token"}
+                        aria-controls="momo-token"
+                        aria-pressed={showMomoToken}
+                        onClick={() => {
+                          setShowMomoToken((current) => !current);
+                          momoTokenInputRef.current?.focus();
+                        }}
+                      >
+                        <TokenVisibilityIcon visible={showMomoToken} />
+                      </button>
+                    </div>
+                    <button
+                      className="field-action"
+                      type="button"
+                      disabled={momoAccountBusy}
+                      aria-label="粘贴墨墨 Token"
+                      onClick={pasteMomoToken}
+                    >
+                      {momoPasting ? "粘贴中…" : "粘贴"}
+                    </button>
+                  </div>
+                  <p className="field-hint">修改后点击保存才会生效；Token 失效时在这里更新。</p>
+                </div>
+                <div className="ai-actions momo-account-actions">
                   <button
-                    className="token-visibility-button"
+                    className="secondary-button"
+                    type="button"
+                    disabled={momoAccountBusy || (!token && !momoTokenDraft)}
+                    onClick={() => saveMomoConfiguration(true)}
+                  >
+                    清除 Token
+                  </button>
+                  <button
+                    className="primary-action"
                     type="button"
                     disabled={momoAccountBusy}
-                    aria-label={showMomoToken ? "隐藏墨墨 Token" : "显示墨墨 Token"}
-                    title={showMomoToken ? "隐藏 Token" : "显示 Token"}
-                    aria-controls="momo-token"
-                    aria-pressed={showMomoToken}
-                    onClick={() => {
-                      setShowMomoToken((current) => !current);
-                      momoTokenInputRef.current?.focus();
-                    }}
+                    onClick={() => saveMomoConfiguration()}
                   >
-                    <TokenVisibilityIcon visible={showMomoToken} />
+                    {momoSaving ? "保存中…" : "保存 Token"}
                   </button>
                 </div>
-                <button
-                  className="field-action"
-                  type="button"
-                  disabled={momoAccountBusy}
-                  aria-label="粘贴墨墨 Token"
-                  onClick={pasteMomoToken}
-                >
-                  {momoPasting ? "粘贴中…" : "粘贴"}
-                </button>
+                {momoMessage ? (
+                  <p className={`ai-message is-${momoMessageKind}`} role="status">{momoMessage}</p>
+                ) : null}
+              {token.trim() ? <button className="settings-link" type="button" disabled={momoAccountBusy} onClick={() => {
+                setMomoTokenDraft(token);
+                setShowMomoToken(false);
+                setMomoAccountOpen(false);
+              }}>收起修改</button> : null}
               </div>
-              <p className="field-hint">修改后点击保存才会生效；Token 失效时在这里更新。</p>
-            </div>
-            <div className="ai-actions momo-account-actions">
-              <button
-                className="secondary-button"
-                type="button"
-                disabled={momoAccountBusy || (!token && !momoTokenDraft)}
-                onClick={() => saveMomoConfiguration(true)}
-              >
-                清除 Token
-              </button>
-              <button
-                className="primary-action"
-                type="button"
-                disabled={momoAccountBusy}
-                onClick={() => saveMomoConfiguration()}
-              >
-                {momoSaving ? "保存中…" : "保存 Token"}
-              </button>
-            </div>
-            {momoMessage ? (
-              <p className={`ai-message is-${momoMessageKind}`} role="status">{momoMessage}</p>
-            ) : null}
+            )}
             <p className="ai-privacy-note">Token 仅保存在本机，不写入卡片或导入历史。</p>
           </section>
-          <section className="ai-settings-card">
+          <section className="ai-settings-card" ref={aiSettingsCardRef}>
             <div className="ai-settings-heading">
               <p className="eyebrow">AI 服务配置</p>
               <h2>AI 设置</h2>
@@ -2023,19 +1980,6 @@ function App() {
                   </div>
 
                   <div className="ai-field">
-                    <label className="field-label" htmlFor="ai-base-url">API 地址</label>
-                    <input
-                      id="ai-base-url"
-                      disabled={aiConfigurationBusy}
-                      type="url"
-                      value={aiBaseUrl}
-                      placeholder={aiProviderDefinition(aiProvider).baseUrl || "https://example.com/v1"}
-                      onChange={(event) => setAiBaseUrl(event.target.value)}
-                    />
-                    <p className="field-hint">已自动填入默认地址，也可以改为兼容 OpenAI 格式的代理地址。</p>
-                  </div>
-
-                  <div className="ai-field">
                     <label className="field-label" htmlFor="ai-model">模型</label>
                     <input
                       id="ai-model"
@@ -2045,6 +1989,22 @@ function App() {
                       onChange={(event) => setAiModel(event.target.value)}
                     />
                   </div>
+
+                  <details className="ai-advanced-settings" open={aiProvider === "custom" ? true : undefined}>
+                    <summary>高级设置</summary>
+                    <div className="ai-field">
+                      <label className="field-label" htmlFor="ai-base-url">API 地址</label>
+                      <input
+                        id="ai-base-url"
+                        disabled={aiConfigurationBusy}
+                        type="url"
+                        value={aiBaseUrl}
+                        placeholder={aiProviderDefinition(aiProvider).baseUrl || "https://example.com/v1"}
+                        onChange={(event) => setAiBaseUrl(event.target.value)}
+                      />
+                      <p className="field-hint">已自动填入默认地址，也可以改为兼容 OpenAI 格式的代理地址。</p>
+                    </div>
+                  </details>
                 </>
               )}
             </div>

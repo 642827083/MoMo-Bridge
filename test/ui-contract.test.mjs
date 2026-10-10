@@ -107,15 +107,14 @@ test("AI 阅读页面只展示已背诵数据并按最多三十个单词生成",
   assert.match(source, /id="reading-questions"/);
   assert.match(source, /高亮词汇/);
   assert.match(source, /aria-pressed=\{active\}/);
-  assert.match(source, /<HighlightToggle active=\{historyHighlightState\[entry.id\] !== false\}/);
-  assert.match(source, /未在文章中发现/);
+  assert.match(source, /<ReadingVocabulary summary=\{readingWordSummary\(entry\)\} active=\{historyHighlightState\[entry.id\] !== false\}/);
   assert.match(source, /显示本段翻译/);
   assert.match(source, /显示全文翻译/);
   assert.match(source, /DEFAULT_READING_ARTICLE_TYPE = "postgraduate2"/);
-  assert.match(source, /复制英文/);
-  assert.match(source, /复制中英对照/);
-  assert.match(source, /已生成阅读/);
-  assert.match(source, /待生成阅读/);
+  assert.doesNotMatch(source, /建立卡片|createAiReadingCards|readingCards|ArticleActionMenu/);
+  assert.doesNotMatch(source, /复制英文|复制中英对照|copyReadingContent|copyReadingQuestions/);
+  assert.match(source, /已覆盖单词/);
+  assert.match(source, /待使用单词/);
   assert.match(styleSource, /\.reading-layout/);
   assert.match(styleSource, /\.reading-article-body/);
   assert.match(styleSource, /\.reading-controls\s*\{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/s);
@@ -136,10 +135,10 @@ test("AI 阅读页面只展示已背诵数据并按最多三十个单词生成",
   assert.doesNotMatch(source, /reading-pause-button/);
   assert.match(styleSource, /\.reading-word-highlight/);
   assert.match(styleSource, /\.reading-heading-highlight-option/);
-  assert.match(styleSource, /\.reading-history-toolbar/);
+  assert.match(styleSource, /\.reading-vocabulary-row/);
   assert.match(styleSource, /\.reading-action-button\s*\{[^}]*width:\s*100%/s);
   assert.doesNotMatch(styleSource, /\.reading-actions \.reading-action-button\s*\{/);
-  assert.match(styleSource, /\.reading-article-actions\s*\{[^}]*grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\)/s);
+  assert.match(styleSource, /\.reading-article-actions\s*\{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/s);
   assert.match(styleSource, /\.reading-article-heading\s*\{[^}]*align-items:\s*flex-end/s);
   assert.ok(
     source.indexOf('<section className="reading-questions"')
@@ -166,21 +165,23 @@ test("AI 阅读页面只展示已背诵数据并按最多三十个单词生成",
   assert.match(styleSource, /\.ai-actions \.primary-action\s*{[^}]*width:\s*104px/s);
 });
 
-test("AI 阅读支持按需生成、折叠查看和复制阅读理解题", () => {
+test("AI 阅读直接显示两个重新生成按钮，选项展开、答案收起", () => {
   assert.match(source, /const READING_QUESTION_COUNT = 4/);
   assert.match(source, /const \[readingQuestionsBusy, setReadingQuestionsBusy\]/);
   assert.match(source, /async function generateReadingQuestions\(\)/);
   assert.match(source, /MNBridge\.send\("generateReadingQuestions"/);
   assert.match(source, /生成阅读题/);
   assert.match(source, /重新生成阅读题/);
-  assert.match(source, /复制阅读题/);
+  assert.doesNotMatch(source, /MNBridge\.send\("createAiReadingCards"/);
   assert.match(source, /查看答案与解析/);
   assert.match(source, /className="reading-questions"/);
   assert.doesNotMatch(source, /reading-more-actions/);
   assert.match(source, /手动生成阅读题|生成阅读题/);
   assert.match(source, /entry\.questions\?\.length/);
   assert.match(source, /renderReadingArticleActions\(entry, true\)/);
-  assert.match(source, /复制中英对照/);
+  assert.doesNotMatch(source, /复制阅读题|readingBilingualText/);
+  assert.match(source, /<div className="reading-history-question"/);
+  assert.doesNotMatch(source, /<details className="reading-history-question"/);
   assert.match(styleSource, /\.reading-question-item\s*\{/);
   assert.match(styleSource, /\.reading-answer-details\s*\{/);
 });

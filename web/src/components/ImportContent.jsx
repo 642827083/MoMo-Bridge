@@ -1,3 +1,4 @@
+import HistoryDeleteAction from "./HistoryDeleteAction";
 import { importHistorySummary, importResultHasFailures } from "../domain/importPresentation.mjs";
 import RefreshIcon from "./RefreshIcon";
 
@@ -158,7 +159,7 @@ export function ImportPreviewPanel({ preview, previewWords, previewExamples, add
   );
 }
 
-export function ImportHistoryPanel({ historyEntries, busy, historyLoading, loadImportHistory, formatHistoryTime, historyOptions, tokenConfigured, retryingHistoryId, retryHistory }) {
+export function ImportHistoryPanel({ historyEntries, busy, historyLoading, loadImportHistory, formatHistoryTime, historyOptions, tokenConfigured, retryingHistoryId, retryHistory, historyMaintenanceBusy, deletingHistoryId, deleteHistoryEntry }) {
   return (
     <div className="import-view-panel" id="import-history-panel" role="tabpanel" aria-labelledby="import-history-tab">
       <section aria-label="导入历史">
@@ -174,8 +175,12 @@ export function ImportHistoryPanel({ historyEntries, busy, historyLoading, loadI
             {historyEntries.map((entry) => (
               <details className="import-task-card import-history-task" key={entry.id}>
                 <summary className="import-task-heading">
-                  <span><strong>{entry.kind === "retry" ? "失败项重试" : "批量导入"}</strong><small>{formatHistoryTime(entry.createdAt)} · {importHistorySummary(entry) || historyOptions(entry)}</small></span>
-                  <span className="import-task-status"><span className={entry.retry?.available ? "history-status has-failure" : "history-status"}>{entry.retry?.available ? "有失败项" : "已完成"}</span><span className="import-task-chevron" aria-hidden="true">›</span></span>
+                  <span className="history-summary-text">
+                    <span className="history-summary-meta"><strong>{entry.kind === "retry" ? "失败项重试" : "批量导入"}</strong><time>{formatHistoryTime(entry.createdAt)}</time></span>
+                    <span className="history-summary-excerpt">{importHistorySummary(entry) || historyOptions(entry)}</span>
+                    <span className={entry.retry?.available ? "history-status has-failure" : "history-status"}>{entry.retry?.available ? "有失败项" : "已完成"}</span>
+                  </span>
+                  <span className="import-task-chevron" aria-hidden="true">›</span>
                 </summary>
                 <div className="import-task-body">
                   <ImportTaskResults result={entry.result || {}} options={entry.options || {}} />
@@ -186,6 +191,8 @@ export function ImportHistoryPanel({ historyEntries, busy, historyLoading, loadI
                       <button className="secondary-button" type="button" disabled={busy || !tokenConfigured} onClick={() => retryHistory(entry)}>{retryingHistoryId === entry.id ? "正在重试…" : "仅重试失败项"}</button>
                     ) : null}
                   </div>
+                  <HistoryDeleteAction disabled={historyMaintenanceBusy} deleting={deletingHistoryId === `import:${entry.id}`}
+                    onDelete={() => deleteHistoryEntry("import", entry)} />
                 </div>
               </details>
             ))}

@@ -350,6 +350,16 @@ var __MN_MOMO_IMPORT_HISTORY_GLOBAL__ = (function () {
     writeDocument(defaultDocument());
   }
 
+  function deleteHistory(id) {
+    const target = typeof id === "string" ? id.trim() : "";
+    if (!target) throw new Error("缺少导入历史 ID");
+    const document = readDocument();
+    const entries = document.entries.filter(function (entry) { return entry.id !== target; });
+    if (entries.length === document.entries.length) throw new Error("未找到这条导入历史");
+    document.entries = entries;
+    writeDocument(document);
+  }
+
   function findHistory(id) {
     const target = String(id || "");
     return readDocument().entries.find(function (entry) {
@@ -359,6 +369,7 @@ var __MN_MOMO_IMPORT_HISTORY_GLOBAL__ = (function () {
 
   return {
     clearHistory,
+    deleteHistory,
     findHistory,
     listHistory,
     recordImport,

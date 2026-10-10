@@ -34,7 +34,7 @@ MoMo Bridge Test.mnaddon
 
 在 MarginNote 中安装这个 `.mnaddon` 文件后，点击插件图标打开窗口。
 
-正式打包使用 `npm run build:release`，当前版本生成 `MoMo Bridge-v2.4.8.mnaddon`；同名正式包已存在时停止构建。
+正式打包使用 `npm run build:release`，当前版本生成 `MoMo Bridge-v2.4.9.mnaddon`；同名正式包已存在时停止构建。
 
 ## 使用流程
 

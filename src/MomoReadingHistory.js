@@ -207,8 +207,8 @@ var __MN_MOMO_READING_HISTORY_GLOBAL__ = (function () {
     });
     if (index < 0) throw new Error("未找到对应的文章历史，无法保存阅读题");
     const normalizedQuestions = safeQuestions(questions);
-    if (normalizedQuestions.length < 3 || normalizedQuestions.length > 5) {
-      throw new Error("阅读题数量应为 3 至 5 道");
+    if (normalizedQuestions.length !== 4) {
+      throw new Error("阅读题数量必须为四道");
     }
     document.entries[index] = Object.assign({}, document.entries[index], {
       questions: normalizedQuestions,

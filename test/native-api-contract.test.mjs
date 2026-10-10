@@ -145,7 +145,8 @@ test("MomoSelection returns card text for sentence extraction", () => {
 test("Web bridge opens the token help page outside the plugin web view", () => {
   assert.match(bridgeSource, /function openExternalURL\(context, payload\)/);
   assert.match(bridgeSource, /https:\/\/open\.maimemo\.com\//);
-  assert.match(bridgeSource, /UIApplication\.sharedApplication\(\)\.openURL\(url\)/);
+  assert.match(bridgeSource, /UIApplication\.sharedApplication\(\)/);
+  assert.match(bridgeSource, /application\.openURL\(url\)/);
   assert.match(bridgeSource, /openExternalURL,/);
 });
 
@@ -224,7 +225,7 @@ test("AI 阅读支持按考试类型生成并保存阅读理解题", () => {
   assert.match(deepSeekSource, /generateQuestions,/);
   assert.match(readingHistorySource, /function safeQuestion\(value\)/);
   assert.match(readingHistorySource, /function recordQuestions\(historyId, questions\)/);
-  assert.match(readingHistorySource, /阅读题数量应为 3 至 5 道/);
+  assert.match(readingHistorySource, /阅读题数量必须为四道/);
   assert.match(bridgeSource, /function generateReadingQuestions\(context, payload\)/);
   assert.match(bridgeSource, /recordQuestions\(/);
   assert.match(bridgeSource, /generateReadingQuestions,/);

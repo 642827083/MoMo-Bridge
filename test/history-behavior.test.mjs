@@ -64,6 +64,26 @@ function createHistoryRuntime(runtimeSource = source, files = new Map()) {
 }
 
 for (const kind of ["import", "reading"]) {
+  if (kind === "import") test(`${kind} deleting one history persists without removing other entries`, () => {
+    const runtimeSource = kind === "import" ? source : readingSource;
+    const { history, files } = createHistoryRuntime(runtimeSource);
+    const record = (word) => kind === "import"
+      ? history.recordImport({ words: [word], addWords: true }, { success: [word] }, {})
+      : history.recordArticle({ words: [{ spelling: word }] }, { article: `${word} works.` });
+    const kept = record("alpha");
+    const removed = record("beta");
+    history.deleteHistory(removed.id);
+    const reopened = createHistoryRuntime(runtimeSource, files).history;
+    assert.deepEqual(Array.from(reopened.listHistory(), (entry) => entry.id), [kept.id]);
+    assert.throws(() => reopened.deleteHistory(""), /缺少/);
+    assert.throws(() => reopened.deleteHistory(removed.id), /未找到/);
+    const before = [...files.values()][0];
+    files.set = () => { throw new Error("storage unavailable"); };
+    assert.throws(() => reopened.deleteHistory(kept.id), /storage unavailable/);
+    assert.equal([...files.values()][0], before);
+    assert.deepEqual(Array.from(reopened.listHistory(), (entry) => entry.id), [kept.id]);
+  });
+
   test(`${kind} history stays cleared after reopening and supports new records`, () => {
     const runtimeSource = kind === "import" ? source : readingSource;
     const { history, files } = createHistoryRuntime(runtimeSource);
@@ -142,6 +162,22 @@ function createBridgeHistoryRuntime() {
     preferences,
   };
 }
+
+test("Deleting one history requires confirmation and preserves the other history and settings", () => {
+  const { commands, importHistory, readingHistory, preferences } = createBridgeHistoryRuntime();
+  commands.saveSettings({}, { token: "keep-token", bookId: "book-1" });
+  const settings = [...preferences.entries()];
+  const imported = importHistory.recordImport({ words: ["alpha"], addWords: true }, { success: ["alpha"] }, {});
+  const reading = readingHistory.recordArticle({ words: [{ spelling: "alpha" }] }, { article: "Alpha works." });
+  for (const [command, id] of [[commands.deleteImportHistory, imported.id]]) {
+    assert.throws(() => command({}, { historyId: id }), /请先确认/);
+    assert.throws(() => command({}, { confirmed: true }), /缺少/);
+  }
+  assert.equal(commands.deleteImportHistory({}, { confirmed: true, historyId: imported.id }).deleted, true);
+  assert.equal(readingHistory.listHistory()[0].id, reading.id);
+  assert.equal(commands.deleteAiReadingHistory, undefined);
+  assert.deepEqual([...preferences.entries()], settings);
+});
 
 test("History clear commands require confirmation and only clear the requested data", () => {
   const { commands, importHistory, readingHistory, preferences } = createBridgeHistoryRuntime();

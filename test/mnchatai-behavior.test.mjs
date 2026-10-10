@@ -147,9 +147,21 @@ test("MN ChatAI connection test and questions reuse the configured plugin", asyn
     return calls.length === 1 ? "OK" : JSON.stringify({ questions });
   } } });
   assert.equal((await api.testConnection({ provider: "mnchatai" })).connected, true);
-  const result = await api.generateQuestions({ provider: "mnchatai" }, "Test article.", ["test"], {});
+  const result = await api.generateQuestions({ provider: "mnchatai" }, "Test article.", ["test"], { questionCount: 3 });
   assert.equal(result.questions.length, 4);
   assert.match(calls[1].user, /Test article\./);
+  assert.match(calls[1].user, /题目数量：4 道/);
+});
+
+test("Reading questions reject non-four counts and incomplete extra questions", () => {
+  const { api } = runtime();
+  const question = { question: "Why?", options: { A: "a", B: "b", C: "c", D: "d" }, answer: "A", explanation: "依据正文。" };
+  for (const count of [0, 3, 5]) {
+    assert.throws(() => api.parseQuestionsContent(JSON.stringify({ questions: Array.from({ length: count }, () => question) })), /四道完整题目/);
+  }
+  assert.equal(api.parseQuestionsContent(JSON.stringify({ questions: Array.from({ length: 4 }, () => question) })).length, 4);
+  assert.throws(() => api.parseQuestionsContent(JSON.stringify({ questions: [question, question, question, {}] })), /四道完整题目/);
+  assert.throws(() => api.parseQuestionsContent(JSON.stringify({ questions: [question, question, question, question, {}] })), /四道完整题目/);
 });
 
 test("MN ChatAI selection survives native settings persistence and saves generated history", async () => {
