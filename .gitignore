@@ -6,3 +6,9 @@ src/web-dist/
 *.gitignore.tmp
 AGENTS.md
 MoMo Import * 社区介绍.md
+*.mnaddon.zip
+*社区介绍*.md
+.web-dev-dist/
+.web-release-dist/
+dist-test/
+dist-release/
