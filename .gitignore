@@ -1,0 +1,13 @@
+*.mnaddon
+*.mnaddon.zip
+AGENTS.md
+*社区介绍*.md
+*.gitignore.tmp
+.DS_Store
+.web-dev-dist/
+.web-release-dist/
+dist-test/
+dist-release/
+node_modules/
+dist/
+**/src/web-dist/
