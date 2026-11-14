@@ -1,0 +1,28 @@
+{
+  "name": "momo-vocabulary-import",
+  "version": "2.4.9",
+  "private": true,
+  "scripts": {
+    "build": "node scripts/build-release.js --test",
+    "build:release": "node scripts/build-release.js --release",
+    "dev": "node scripts/dev-web.js",
+    "test": "node --test test/lemma.test.mjs test/notepad.test.mjs test/examples.test.mjs test/momo-api-behavior.test.mjs test/progress-estimate.test.mjs test/native-api-contract.test.mjs test/selection-native-contract.test.mjs test/ui-contract.test.mjs test/import-presentation.test.mjs test/history-contract.test.mjs test/history-behavior.test.mjs test/settings-behavior.test.mjs test/mnchatai-behavior.test.mjs",
+    "version": "node scripts/bump-version.js",
+    "version:patch": "node scripts/bump-version.js patch",
+    "version:minor": "node scripts/bump-version.js minor",
+    "version:major": "node scripts/bump-version.js major"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.0.1",
+    "clean-css": "^5.3.3",
+    "html-minifier-terser": "^7.2.0",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5",
+    "terser": "^5.46.1",
+    "vite": "^8.0.9"
+  },
+  "mnRails": {
+    "template": "web"
+  },
+  "mnaddonFileName": "MoMo Bridge"
+}
